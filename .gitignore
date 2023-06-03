@@ -1,1 +1,7 @@
 .vscode/launch.json
+__pycache__/
+*.py[cod]
+*$py.class
+chunks_*
+*.m4a
+temp.txt
