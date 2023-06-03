@@ -13,9 +13,8 @@ from pathlib import Path
 from threading import Thread
 from urllib.parse import urlparse
 
-from util import requests_retry_session, safeify, concat
-
 import WebSocketHandler
+from util import concat, requests_retry_session, safeify
 
 
 class TwitterSpace:
@@ -198,26 +197,27 @@ class TwitterSpace:
         print("\nFinished Downloading Chunks.")
 
         files = list(chunkpath.iterdir())
-        temp_aac = path / "_temp.aac"
+        temp_aac = path / f"{filename}_merged.aac"
+        output = path / f"{filename}.m4a"
         concat(files, temp_aac)
-
         try:
             command = f"ffmpeg -loglevel error -stats -i \"{temp_aac}\" -c copy "
             if metadata != None:
                 title = metadata["title"]
                 author = metadata["author"]
                 command += f"-metadata title=\"{title}\" -metadata artist=\"{author}\" "
-            command += f"\"{filename}.m4a\""
+            command += f"\"{output}\""
             print(f'[DEBUG] command is {command}')
-            subprocess.run(command, cwd=path, shell=True)
-
+            subprocess.run(command, shell=True)
+        except Exception as e:
+            print('Error when converting to m4a:')
+            print(e)
+            print(f'Temp files are saved at {chunkpath} and {temp_aac}.')
+        else:
             # Delete the Directory with all of the chunks. We no longer need them.
-            # shutil.rmtree(chunkpath)
+            shutil.rmtree(chunkpath)
             temp_aac.unlink()
-
-        except Exception:
-            print("Failed To Create Subprocess.")
-        print(f"Successfully Downloaded Twitter Space {filename}.m4a")
+            print(f"Successfully Downloaded Twitter Space {filename}.m4a")
 
     def __init__(self, space_id=None, dyn_url=None, filename=None, filenameformat=None, path=None, withChat=False):
         self.space_id = space_id

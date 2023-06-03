@@ -1,8 +1,10 @@
+from pathlib import Path
+from shutil import copyfileobj
+
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
-from pathlib import Path
-from shutil import copyfileobj
+
 
 # Modified from https://www.peterbe.com/plog/best-practice-with-retries-with-requests
 def requests_retry_session(

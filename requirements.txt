@@ -1,3 +1,2 @@
-mutagen
-python-slugify
-requests-futures
+requests
+urllib3
