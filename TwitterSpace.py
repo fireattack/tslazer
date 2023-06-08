@@ -7,11 +7,10 @@ import re
 import shutil
 import subprocess
 import time
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from threading import Thread
-from urllib.parse import urlparse
+from urllib.parse import urljoin
 
 import WebSocketHandler
 from util import concat, requests_retry_session, safeify
@@ -19,18 +18,6 @@ from util import concat, requests_retry_session, safeify
 
 class TwitterSpace:
     TwitterUser = collections.namedtuple('TwitterUser', ['name', 'screen_name', 'id'])
-
-    @dataclass
-    class SpacePlaylists:
-        chunk_server: str
-        dyn_url: str
-        master_url: str
-        chatToken: str
-
-    @dataclass
-    class Chunk:
-        url: str
-        filename: str
 
     @staticmethod
     def getUser(username):
@@ -57,48 +44,21 @@ class TwitterSpace:
         return tokenResponse["guest_token"]
 
     @staticmethod
-    def getPlaylists(media_key=None, guest_token=None, dyn_url=None):
+    def getPlaylist(media_key, guest_token):
         """
         Get The master playlist from a twitter space.
 
         :param media_key: The media key to the twitter space. Given in the metadata
         :param guest_token: The Guest Token that allows us to use the Twitter API without OAuth
-        :param dyn_url: The dynamic/Master URL (If needed)
         :returns: NamedTuple SpacePlaylists
         """
-        print(f'[DEBUG] Update playlist URLs...')
-        if media_key != None and guest_token != None:
-            headers = {"authorization" : "Bearer AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA", "x-guest-token" : guest_token}
-            dataRequest = requests_retry_session().get(f"https://twitter.com/i/api/1.1/live_video_stream/status/{media_key}", headers=headers)
-            dataResponse = dataRequest.json()
-            dataLocation = dataResponse['source']['location']
-            dataLocation = re.sub(r"(dynamic_playlist\.m3u8((?=\?)(\?type=[a-z]{4,}))?|master_playlist\.m3u8(?=\?)(\?type=[a-z]{4,}))", "master_playlist.m3u8", dataLocation)
+        headers = {"authorization" : "Bearer AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA", "x-guest-token" : guest_token}
+        dataRequest = requests_retry_session().get(f"https://twitter.com/i/api/1.1/live_video_stream/status/{media_key}", headers=headers)
+        dataResponse = dataRequest.json()
+        dataLocation = dataResponse['source']['location']
+        chatToken = dataResponse["chatToken"]
 
-            chatToken = dataResponse["chatToken"]
-
-        if dyn_url != None:
-            dataLocation = dyn_url
-            dataLocation = re.sub(r"(dynamic_playlist\.m3u8((?=\?)(\?type=[a-z]{4,}))?|master_playlist\.m3u8(?=\?)(\?type=[a-z]{4,}))", "master_playlist.m3u8", dataLocation)
-            chatToken = "None"
-
-        dataComponents = urlparse(dataLocation)
-
-        # Prepare Data Path and Data Server
-        # The data path is used to retrieve the True Master Playlist
-        dataServer = f"{dataComponents.scheme}://{dataComponents.hostname}"
-        dataPath = dataComponents.path
-
-        # Get the Master Playlist
-        playlistRequest = requests_retry_session().get(f"{dataServer}{dataPath}")
-        playlistResponse = playlistRequest.text.split('\n')[-2]
-        playlistUrl = f"{dataServer}{playlistResponse}"
-
-        chunkServer = f"{dataServer}{dataPath[:-20]}"
-#        return TwitterSpace.SpacePlaylists(chunkServer, f"{dataServer}{dataPath}" , playlistUrl, chatToken)
-        if playlistResponse == "#EXT-X-ENDLIST":
-            return TwitterSpace.SpacePlaylists(chunkServer[:-14], f"{dataServer}{dataPath}" , f"{dataServer}{dataPath}", chatToken)
-        else:
-            return TwitterSpace.SpacePlaylists(chunkServer, f"{dataServer}{dataPath}" , playlistUrl, chatToken)
+        return dataLocation, chatToken
 
     @staticmethod
     def getMetadata(space_id, guest_token):
@@ -126,44 +86,46 @@ class TwitterSpace:
         return metadataResponse
 
     @staticmethod
-    def getChunks(playlists):
+    def getChunks(playlist_url):
         """
         When we receive the chunks from the server, we want to be able to parse that m3u8 and get all of the chunks from it.
 
-        :param playlists: space playlist namedtuple
+        :param playlists: space playlist url, either master_playlist or playlist_\d+ (for replay)
         :returns: list of all chunks
         """
+        # when fetching from a recording, the playlist url looks like this:
+        # https://prod-fastly-ap-northeast-1.video.pscp.tv/Transcoding/v1/hls/{somehash}/non_transcode/ap-northeast-1/periscope-replay-direct-prod-ap-northeast-1-public/audio-space/playlist_16760776723829618751.m3u8?type=replay
 
-        while True:
-        # it sometimes takes a very long time to update playlist in master_url. So we just constantly check it until it's updated.
-            # update the playlist
-            try:
-                playlists = TwitterSpace.getPlaylists(dyn_url=playlists.dyn_url)
-            except Exception:
-                pass
+        # when fetching from a live space, the playlist url looks like this:
+        # https://prod-fastly-ap-northeast-1.video.pscp.tv/Transcoding/v1/hls/{somehash}/non_transcode/ap-northeast-1/periscope-replay-direct-prod-ap-northeast-1-public/audio-space/master_playlist.m3u8
+        # which has a sub playlist like this:
+        # https://prod-fastly-ap-northeast-1.video.pscp.tv/Transcoding/v1/hls/{somehash}/transcode/ap-northeast-1/periscope-replay-direct-prod-ap-northeast-1-public/{someconfig}/audio-space/playlist_16761019244202992663.m3u8
+        # sometimes this sub playlist is 404, you need to wait for a while and try again.
+        # and when get chunks, join its name to the BASE master_playlist.m3u8's URL (the one with /non_transcode/), NOT the sub playlist one (the one with /transcode/{someconfig}/}).
 
-            print(f'[DEBUG] current master_url filename: {playlists.master_url.split("/")[-1]}')
-            print('[DEBUG] current master_url:')
-            print(playlists.master_url)
-
-            m3u8Request = requests_retry_session().get(playlists.master_url)
-            print('[DEBUG] request status code:', m3u8Request.status_code)
-            if m3u8Request.status_code != 200:
-                print(f'[DEBUG] failed to get playlist m3u8, retry after 10 seconds...')
+        if 'master_playlist.m3u8' in playlist_url:
+            print('[DEBUG] fetch sub playlist from master playlist...')
+            while True:
+                r = requests_retry_session().get(playlist_url)
+                real_playlist_url = urljoin(playlist_url, r.text.split('\n')[-2])
+                playlist_name = real_playlist_url.split("/")[-1]
+                print(f'[DEBUG] current playlist_url is: {playlist_name}')
+                m3u8Request = requests_retry_session().get(real_playlist_url)
+                print('[DEBUG] request status code:', m3u8Request.status_code)
+                if m3u8Request.status_code == 200:
+                    break
+                print(f'[DEBUG] failed to get {playlist_name} ({m3u8Request.status_code}), retry after 10 seconds...')
                 time.sleep(10)
-                continue
-            m3u8Data = m3u8Request.text
+        else:
+            m3u8Request = requests_retry_session().get(playlist_url)
+        m3u8Data = m3u8Request.text
 
-            chunkList = list()
-            for chunk in re.findall(r"chunk_\d{19}_\d+_a\.aac", m3u8Data):
-                chunkList.append(TwitterSpace.Chunk(f"{playlists.chunk_server}{chunk}", chunk))
+        chunkList = list()
+        for chunk in re.findall(r"chunk_\d{19}_\d+_a\.aac", m3u8Data):
+            chunkList.append(urljoin(playlist_url, chunk)) # use playlist_url, NOT real_playlist_url
 
-            print(f'[DEBUG] get {len(chunkList)} chunks.')
-            if len(chunkList) > 0:
-                break
-            else:
-                print(f'[DEBUG] failed to get any chunks, retry after 10 seconds...')
-                time.sleep(10)
+        print(f'[DEBUG] get {len(chunkList)} chunks.')
+        assert len(chunkList) > 0, "No chunks found in m3u8"
         return chunkList
 
     @staticmethod
@@ -178,16 +140,17 @@ class TwitterSpace:
         :returns: None
         """
         path = Path(path)
-        chunkpath = path / ('chunks_' + str(int(datetime.now().timestamp())) + '_' + filename)
-        chunkpath.mkdir()
+        chunk_dir = path / ('chunks_' + str(int(datetime.now().timestamp())) + '_' + filename)
+        chunk_dir.mkdir()
 
-        def download(chunk, chunkpath):
-            with requests_retry_session().get(chunk.url) as r:
-                with (chunkpath / chunk.filename).open("wb") as chunkWriter:
+        def download(chunk_url, chunkpath):
+            filename = chunk_url.split("/")[-1]
+            with requests_retry_session().get(chunk_url) as r:
+                with (chunkpath / filename).open("wb") as chunkWriter:
                     chunkWriter.write(r.content)
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=10) as ex:
-            futures = [ex.submit(download, chunk, chunkpath) for chunk in chunklist]
+            futures = [ex.submit(download, chunk_url, chunk_dir) for chunk_url in chunklist]
             total = len(futures)
             finished = 0
             for _ in concurrent.futures.as_completed(futures):
@@ -196,7 +159,7 @@ class TwitterSpace:
 
         print("\nFinished Downloading Chunks.")
 
-        files = list(chunkpath.iterdir())
+        files = list(chunk_dir.iterdir())
         temp_aac = path / f"{filename}_merged.aac"
         output = path / f"{filename}.m4a"
         concat(files, temp_aac)
@@ -212,10 +175,10 @@ class TwitterSpace:
         except Exception as e:
             print('Error when converting to m4a:')
             print(e)
-            print(f'Temp files are saved at {chunkpath} and {temp_aac}.')
+            print(f'Temp files are saved at {chunk_dir} and {temp_aac}.')
         else:
             # Delete the Directory with all of the chunks. We no longer need them.
-            shutil.rmtree(chunkpath)
+            shutil.rmtree(chunk_dir)
             temp_aac.unlink()
             print(f"Successfully Downloaded Twitter Space {filename}.m4a")
 
@@ -255,13 +218,13 @@ class TwitterSpace:
         # Get the Fileformat here, so that way it won't hinder the chat exporter when it's running.
         # Now let's format the fileformat per the user's request.
         # File Format Options:
-        #    {host_display_name}	Host Display Name
-        #    {host_username}	Host Username
-        #    {host_user_id}	Host User ID
-        #    {space_title}	Space Title
-        #    {space_id}	Space ID
-        #    {datetime}    Year-Month-Day Hour:Minute:Second (Local)
-        #    {datetimeutc} Year-Month-Day Hour:Minute:Second (UTC)
+        #    {host_display_name} Host Display Name
+        #    {host_username}     Host Username
+        #    {host_user_id}      Host User ID
+        #    {space_title}       Space Title
+        #    {space_id}          Space ID
+        #    {datetime}          Year-Month-Day Hour:Minute:Second (Local)
+        #    {datetimeutc}       Year-Month-Day Hour:Minute:Second (UTC)
 
         if self.filenameformat != None and self.metadata != None:
             substitutes = dict(
@@ -281,14 +244,15 @@ class TwitterSpace:
 
         # Now lets get the playlists
         if space_id != None and self.metadata != None:
-            self.playlists = TwitterSpace.getPlaylists(media_key=self.media_key, guest_token=guest_token)
-        if space_id == None and self.metadata == None:
-            self.playlists = TwitterSpace.getPlaylists(dyn_url=self.dyn_url)
+            self.playlist_url, self.chat_token = TwitterSpace.getPlaylist(media_key=self.media_key, guest_token=guest_token)
+        else:
+            self.playlist_url = self.dyn_url
+        self.playlist_url = re.sub(r"(dynamic_playlist\.m3u8((?=\?)(\?type=[a-z]{4,}))?|master_playlist\.m3u8(?=\?)(\?type=[a-z]{4,}))", "master_playlist.m3u8", self.playlist_url)
 
         # Now Start a subprocess for running the chat exporter
         if withChat == True and self.metadata != None:
             print("[ChatExporter] Chat Exporting is currently only supported for Ended Spaces with a recording. To Export Chat for a live space, copy the chat token and use WebSocketDriver.py.")
-            chatThread = Thread(target=WebSocketHandler.SpaceChat, args=(self.playlists.chatToken, self.filename, self.path,))
+            chatThread = Thread(target=WebSocketHandler.SpaceChat, args=(self.chat_token, self.filename, self.path,))
             #chatThread.start()
 
         # Print out the Space Information and wait for the Space to End (if it's running)
@@ -299,9 +263,8 @@ class TwitterSpace:
             print(f"Space Title: {self.title}")
             print(f"Space Host Username: {self.creator.screen_name}")
             print(f"Space Host Display Name: {self.creator.name}")
-            print(f"Space Master URL:\n{self.playlists.master_url}")
-            print(f"Space Dynamic URL:\n{self.playlists.dyn_url}")
-            print(f"Chat Token:\n{self.playlists.chatToken}")
+            print(f"Space Playlist URL:\n{self.playlist_url}")
+            print(f"Chat Token:\n{self.chat_token}")
             print(f"Downloading to {self.filename}.m4a")
 
             print("Waiting for space to end...")
@@ -315,14 +278,11 @@ class TwitterSpace:
             print("Space Ended. Wait 1 minute for the recording to be processed.")
             time.sleep(60)
 
-        print(f'[DEBUG] current master_url filename: {self.playlists.master_url.split("/")[-1]}')
-        # Now it's time to download.
-
         if self.metadata != None:
             m4aMetadata = {"title" : self.title, "author" : self.creator.screen_name}
         else:
             m4aMetadata = None
-        chunks = TwitterSpace.getChunks(self.playlists)
+        chunks = TwitterSpace.getChunks(self.playlist_url)
         TwitterSpace.downloadChunks(chunks, self.filename, self.path, m4aMetadata)
 
         if self.metadata != None and self.state == "Ended" and withChat == True and self.wasrunning == False:
