@@ -4,4 +4,5 @@ __pycache__/
 *$py.class
 chunks_*
 *.m4a
+*.aac
 temp.txt

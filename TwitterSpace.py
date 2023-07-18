@@ -50,7 +50,7 @@ class TwitterSpace:
 
         :param media_key: The media key to the twitter space. Given in the metadata
         :param guest_token: The Guest Token that allows us to use the Twitter API without OAuth
-        :returns: NamedTuple SpacePlaylists
+        :returns: (playlist_url, chat_token)
         """
         headers = {"authorization" : "Bearer AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA", "x-guest-token" : guest_token}
         dataRequest = requests_retry_session().get(f"https://twitter.com/i/api/1.1/live_video_stream/status/{media_key}", headers=headers)
@@ -68,6 +68,7 @@ class TwitterSpace:
 
         :param space_id: URL or Space ID
         :param guest_token: Guest Token
+        :returns: dict
         """
         # print(f'[DEBUG] Get metadata for {space_id}...')
         try:
@@ -129,7 +130,7 @@ class TwitterSpace:
         return chunkList
 
     @staticmethod
-    def downloadChunks(chunklist, filename, path='.', metadata=None):
+    def downloadChunks(chunklist, filename, path='.', metadata=None, keep_temp=False):
         """
         Download all of the chunks from the m3u8 to a specified path.
 
@@ -137,6 +138,7 @@ class TwitterSpace:
         :param filename: Name of the file we want to write the data to
         :param path: the path to download the chunks to
         :param metadata: any additional metadata that we would like to write to the m4a
+        :param keep_temp: keep the temp files
         :returns: None
         """
         path = Path(path)
@@ -153,13 +155,20 @@ class TwitterSpace:
             futures = [ex.submit(download, chunk_url, chunk_dir) for chunk_url in chunklist]
             total = len(futures)
             finished = 0
-            for _ in concurrent.futures.as_completed(futures):
+            for future in concurrent.futures.as_completed(futures):
+                if future.exception() is not None:
+                    print(future.exception())
                 finished += 1
                 print(f'\r{finished}/{total} chunks downloaded.      ', end='')
 
         print("\nFinished Downloading Chunks.")
 
         files = list(chunk_dir.iterdir())
+        if keep_temp:
+            # generate a list of files
+            s = '\n'.join([f.name for f in files])
+            Path('chunks_debug.txt').write_text(s, encoding='utf-8')
+
         temp_aac = path / f"{filename}_merged.aac"
         output = path / f"{filename}.m4a"
         concat(files, temp_aac)
@@ -178,11 +187,14 @@ class TwitterSpace:
             print(f'Temp files are saved at {chunk_dir} and {temp_aac}.')
         else:
             # Delete the Directory with all of the chunks. We no longer need them.
-            shutil.rmtree(chunk_dir)
-            temp_aac.unlink()
+            if keep_temp:
+                print(f'Keep mode. Temp files are saved at {chunk_dir} and {temp_aac}.')
+            else:
+                shutil.rmtree(chunk_dir)
+                temp_aac.unlink()
             print(f"Successfully Downloaded Twitter Space {filename}.m4a")
 
-    def __init__(self, space_id=None, dyn_url=None, filename=None, filenameformat=None, path=None, withChat=False):
+    def __init__(self, space_id=None, dyn_url=None, filename=None, filenameformat=None, path=None, withChat=False, keep_temp=False):
         self.space_id = space_id
         self.dyn_url = dyn_url
         self.filename = filename
@@ -191,6 +203,7 @@ class TwitterSpace:
         self.metadata = None
         self.playlists = None
         self.wasrunning = False
+        self.keep_temp = keep_temp
 
         # Get the metadata (If applicable)
         if self.space_id != None:
@@ -283,7 +296,7 @@ class TwitterSpace:
         else:
             m4aMetadata = None
         chunks = TwitterSpace.getChunks(self.playlist_url)
-        TwitterSpace.downloadChunks(chunks, self.filename, self.path, m4aMetadata)
+        TwitterSpace.downloadChunks(chunks, self.filename, self.path, m4aMetadata, keep_temp=self.keep_temp)
 
         if self.metadata != None and self.state == "Ended" and withChat == True and self.wasrunning == False:
             chatThread.start() # If We're Downloading a Recording, we're all good to download the chat.

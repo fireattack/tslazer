@@ -6,6 +6,7 @@ import TwitterSpace
 
 parser = argparse.ArgumentParser(description="Download Twitter Spaces at lazer fast speeds!", formatter_class=argparse.RawTextHelpFormatter)
 parser.add_argument("--path", "-p", type=str, default='.', help="Path to download the space")
+parser.add_argument("--keep", "-k", action='store_true', help="Keep the temporary files")
 
 spaceID_group = parser.add_argument_group("Downloading from a Space ID/URL")
 spaceID_group.add_argument("--space_id", "-s", type=str, help="Twitter Space ID or URL")
@@ -26,10 +27,10 @@ spaceID_group.add_argument("--filenameformat", "-f", default=filenameformat_defa
 
 dyn_group = parser.add_argument_group("Downloading from a dynamic or master URL")
 dyn_group.add_argument("--dyn_url", "-d", type=str, help="Twitter Space Master URL or Dynamic Playlist URL")
-dyn_group.add_argument("--filename", "-fn", default="", type=str, help="Filename for the Twitter Space")
+dyn_group.add_argument("--filename", "-o", default="", type=str, help="Filename for the Twitter Space")
 args = parser.parse_args()
 
 if args.space_id != None and args.filenameformat != None:
-    TwitterSpace.TwitterSpace(space_id=args.space_id, filenameformat=args.filenameformat, path=args.path, withChat=args.withchat)
+    TwitterSpace.TwitterSpace(space_id=args.space_id, filenameformat=args.filenameformat, path=args.path, withChat=args.withchat, keep_temp=args.keep)
 if args.dyn_url != None and args.filename != None:
-    TwitterSpace.TwitterSpace(dyn_url=args.dyn_url, filename=args.filename, path=args.path)
+    TwitterSpace.TwitterSpace(dyn_url=args.dyn_url, filename=args.filename, path=args.path, keep_temp=args.keep)
