@@ -145,10 +145,10 @@ class TwitterSpace:
         chunk_dir = path / ('chunks_' + str(int(datetime.now().timestamp())) + '_' + filename)
         chunk_dir.mkdir()
 
-        def download(chunk_url, chunkpath):
+        def download(chunk_url, chunk_dir):
             filename = chunk_url.split("/")[-1]
             with requests_retry_session().get(chunk_url) as r:
-                with (chunkpath / filename).open("wb") as chunkWriter:
+                with (chunk_dir / filename).open("wb") as chunkWriter:
                     chunkWriter.write(r.content)
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=10) as ex:
@@ -163,7 +163,13 @@ class TwitterSpace:
 
         print("\nFinished Downloading Chunks.")
 
-        files = list(chunk_dir.iterdir())
+        # Verify, and the files will be automatically in order
+        files = []
+        for chunk_url in chunklist:
+            f = chunk_dir / chunk_url.split("/")[-1]
+            assert f.exists(), f"Chunk {f.name} does not exist!"
+            files.append(f)
+
         if keep_temp:
             # generate a list of files
             s = '\n'.join([f.name for f in files])
