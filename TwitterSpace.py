@@ -13,7 +13,7 @@ from threading import Thread
 from urllib.parse import urljoin
 
 import WebSocketHandler
-from util import concat, requests_retry_session, safeify
+from util import concat, requests_retry_session, safeify, load_cookie
 
 
 class TwitterSpace:
@@ -28,6 +28,7 @@ class TwitterSpace:
         :returns: TwitterUser NamedTuple
         """
         dataRequest = requests_retry_session().get(f"https://cdn.syndication.twimg.com/widgets/followbutton/info.json?screen_names={username}")
+        dataRequest.raise_for_status()
         dataResponse = dataRequest.json()
         return TwitterSpace.TwitterUser(dataResponse[0]['name'], dataResponse[0]['screen_name'], dataResponse[0]['id'])
 
@@ -40,20 +41,21 @@ class TwitterSpace:
         """
         headers = {"authorization" : "Bearer AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA"}
         tokenRequest = requests_retry_session().post("https://api.twitter.com/1.1/guest/activate.json", headers=headers)
+        tokenRequest.raise_for_status()
         tokenResponse = tokenRequest.json()
         return tokenResponse["guest_token"]
 
     @staticmethod
-    def getPlaylist(media_key, guest_token):
+    def getPlaylist(media_key, headers):
         """
         Get The master playlist from a twitter space.
 
         :param media_key: The media key to the twitter space. Given in the metadata
-        :param guest_token: The Guest Token that allows us to use the Twitter API without OAuth
+        :param headers: A dictionary containing the headers for the request.
         :returns: (playlist_url, chat_token)
         """
-        headers = {"authorization" : "Bearer AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA", "x-guest-token" : guest_token}
         dataRequest = requests_retry_session().get(f"https://twitter.com/i/api/1.1/live_video_stream/status/{media_key}", headers=headers)
+        dataRequest.raise_for_status()
         dataResponse = dataRequest.json()
         dataLocation = dataResponse['source']['location']
         chatToken = dataResponse["chatToken"]
@@ -61,13 +63,12 @@ class TwitterSpace:
         return dataLocation, chatToken
 
     @staticmethod
-    def getMetadata(space_id, guest_token):
+    def getMetadata(space_id, headers):
         """
         Retrieve the Metadata for a given twitter space ID or URL.
         Note: If you are working with a dynamic url, then you cannot use this function.
 
-        :param space_id: URL or Space ID
-        :param guest_token: Guest Token
+        :param headers: A dictionary containing the headers for the request.
         :returns: dict
         """
         # print(f'[DEBUG] Get metadata for {space_id}...')
@@ -77,11 +78,11 @@ class TwitterSpace:
             print("Unable to find a space ID, please try again.")
 
         # Prepare Variables
-        headers = {"authorization" : "Bearer AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA", "x-guest-token" : guest_token}
         variables = f"{{\"id\": \"{spaceID}\",\"isMetatagsQuery\":true,\"withSuperFollowsUserFields\":true,\"withDownvotePerspective\":false,\"withReactionsMetadata\":false,\"withReactionsPerspective\":false,\"withSuperFollowsTweetFields\":true,\"withReplays\":true}}"
         features = "{\"dont_mention_me_view_api_enabled\":true,\"interactive_text_enabled\":true,\"responsive_web_uc_gql_enabled\":false,\"vibe_tweet_context_enabled\":false,\"responsive_web_edit_tweet_api_enabled\":false,\"standardized_nudges_for_misinfo_nudges_enabled\":false}"
 
         metadataRequest = requests_retry_session().get(f"https://twitter.com/i/api/graphql/yMLYE2ltn1nOZ5Gyk3JYSw/AudioSpaceById?variables={variables}&features={features}", headers=headers)
+        metadataRequest.raise_for_status()
         metadataResponse = metadataRequest.json()
 
         return metadataResponse
@@ -151,7 +152,7 @@ class TwitterSpace:
                 with (chunk_dir / filename).open("wb") as chunkWriter:
                     chunkWriter.write(r.content)
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as ex:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=20) as ex:
             futures = [ex.submit(download, chunk_url, chunk_dir) for chunk_url in chunklist]
             total = len(futures)
             finished = 0
@@ -177,7 +178,9 @@ class TwitterSpace:
 
         temp_aac = path / f"{filename}_merged.aac"
         output = path / f"{filename}.m4a"
+        print("Merging chunks using binary concat...")
         concat(files, temp_aac)
+        print("Remuxing to m4a using FFMPEG...")
         try:
             command = f"ffmpeg -loglevel error -stats -i \"{temp_aac}\" -c copy "
             if metadata != None:
@@ -200,7 +203,34 @@ class TwitterSpace:
                 temp_aac.unlink()
             print(f"Successfully Downloaded Twitter Space {filename}.m4a")
 
-    def __init__(self, space_id=None, dyn_url=None, filename=None, filenameformat=None, path=None, withChat=False, keep_temp=False):
+    @staticmethod
+    def getHeaders(guest_token=None, cookies=None):
+        """
+        Constructs and returns the headers for Twitter API HTTP requests.
+
+        :param guest_token: A string representing the guest token. Default is None.
+        :param cookies: A dictionary of cookie name-value pairs. Default is None.
+
+        :assert: Either guest_token or cookies must be provided.
+
+        :return: A dictionary containing the headers for the request.
+
+        :raises AssertionError: If both guest_token and cookies are None.
+        """
+        assert guest_token is not None or cookies is not None, 'guest_token or cookies must be provided.'
+        if cookies is None:
+            return {
+                "authorization" : "Bearer AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA",
+                "x-guest-token": guest_token}
+        else:
+            cookie_header = "; ".join([f"{name}={value}" for name, value in cookies.items()])
+            return {
+                "authorization" : "Bearer AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA",
+                "x-csrf-token": cookies['ct0'],
+                "cookie": cookie_header
+            }
+
+    def __init__(self, space_id=None, dyn_url=None, filename=None, filenameformat=None, path=None, withChat=False, keep_temp=False, cookies=None):
         self.space_id = space_id
         self.dyn_url = dyn_url
         self.filename = filename
@@ -210,15 +240,22 @@ class TwitterSpace:
         self.playlists = None
         self.wasrunning = False
         self.keep_temp = keep_temp
+        self.cookies = cookies
+
+        if self.cookies is None and self.space_id != None:
+            # guest_token = TwitterSpace.getGuestToken()
+            print('[Error] Download from a Space ID without cookies is no longer supported.')
+            return
+        if self.cookies:
+            cookies = load_cookie(self.cookies)
+            headers = TwitterSpace.getHeaders(cookies=cookies)
 
         # Get the metadata (If applicable)
         if self.space_id != None:
-            guest_token = TwitterSpace.getGuestToken()
-            self.metadata = TwitterSpace.getMetadata(self.space_id, guest_token)
+            self.metadata = TwitterSpace.getMetadata(self.space_id, headers)
 
         # If there's metadata, set the metadata.
         if self.metadata != None:
-
             try:
                 self.title = self.metadata['data']['audioSpace']['metadata']['title']
             except Exception:
@@ -242,8 +279,8 @@ class TwitterSpace:
         #    {host_user_id}      Host User ID
         #    {space_title}       Space Title
         #    {space_id}          Space ID
-        #    {datetime}          Year-Month-Day Hour:Minute:Second (Local)
-        #    {datetimeutc}       Year-Month-Day Hour:Minute:Second (UTC)
+        #    {datetime}          Space Start Time (Local)
+        #    {datetimeutc}       Space Start Time (UTC)
 
         if self.filenameformat != None and self.metadata != None:
             substitutes = dict(
@@ -252,8 +289,8 @@ class TwitterSpace:
                 host_user_id=self.creator.id,
                 space_title=self.title,
                 space_id=self.space_id,
-                datetime=datetime.now(),
-                datetimeutc=datetime.now(timezone.utc),
+                datetime=datetime.fromtimestamp(self.started_at/1000.0),
+                datetimeutc=datetime.fromtimestamp(self.started_at/1000.0, tz=timezone.utc)
             )
             self.filename = self.filenameformat.format(**substitutes)
             self.filename = safeify(self.filename)
@@ -263,7 +300,7 @@ class TwitterSpace:
 
         # Now lets get the playlists
         if space_id != None and self.metadata != None:
-            self.playlist_url, self.chat_token = TwitterSpace.getPlaylist(media_key=self.media_key, guest_token=guest_token)
+            self.playlist_url, self.chat_token = TwitterSpace.getPlaylist(self.media_key, headers)
         else:
             self.playlist_url = self.dyn_url
         self.playlist_url = re.sub(r"(dynamic_playlist\.m3u8((?=\?)(\?type=[a-z]{4,}))?|master_playlist\.m3u8(?=\?)(\?type=[a-z]{4,}))", "master_playlist.m3u8", self.playlist_url)
@@ -275,27 +312,30 @@ class TwitterSpace:
             #chatThread.start()
 
         # Print out the Space Information and wait for the Space to End (if it's running)
-        if self.metadata != None and self.state == "Running":
-            self.wasrunning = True
+        if self.metadata != None:
             # Print out the space Information
             print(f"Space Found!")
+            print(f"Space ID: {self.space_id}")
             print(f"Space Title: {self.title}")
+            print(f'Space Current State: {self.state}')
             print(f"Space Host Username: {self.creator.screen_name}")
             print(f"Space Host Display Name: {self.creator.name}")
             print(f"Space Playlist URL:\n{self.playlist_url}")
             print(f"Chat Token:\n{self.chat_token}")
             print(f"Downloading to {self.filename}.m4a")
 
-            print("Waiting for space to end...")
-            while self.state == "Running":
-                self.metadata = TwitterSpace.getMetadata(self.space_id, guest_token)
-                try:
-                    self.state = self.metadata["data"]["audioSpace"]["metadata"]["state"]
-                    time.sleep(10)
-                except Exception:
-                    self.state = "ERROR"
-            print("Space Ended. Wait 1 minute for the recording to be processed.")
-            time.sleep(60)
+            if self.state == "Running":
+                self.wasrunning = True
+                print("Waiting for space to end...")
+                while self.state == "Running":
+                    self.metadata = TwitterSpace.getMetadata(self.space_id, headers)
+                    try:
+                        self.state = self.metadata["data"]["audioSpace"]["metadata"]["state"]
+                        time.sleep(10)
+                    except Exception:
+                        self.state = "ERROR"
+                print("Space Ended. Wait 1 minute for the recording to be processed.")
+                time.sleep(60)
 
         if self.metadata != None:
             m4aMetadata = {"title" : self.title, "author" : self.creator.screen_name}

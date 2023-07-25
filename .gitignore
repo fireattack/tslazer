@@ -6,3 +6,5 @@ chunks_*
 *.m4a
 *.aac
 temp.txt
+/cookies.txt
+/temp.py

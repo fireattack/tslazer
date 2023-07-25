@@ -1,3 +1,4 @@
+from http.cookiejar import MozillaCookieJar
 from pathlib import Path
 from shutil import copyfileobj
 
@@ -44,3 +45,8 @@ def concat(files, output):
         copyfileobj(fi, out)
         fi.close()
     out.close()
+
+def load_cookie(filename):
+    cj = MozillaCookieJar(filename)
+    cj.load(ignore_expires=True, ignore_discard=True)
+    return {cookie.name: cookie.value for cookie in cj}
