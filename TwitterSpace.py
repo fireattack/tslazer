@@ -189,7 +189,8 @@ class TwitterSpace:
                 command += f"-metadata title=\"{title}\" -metadata artist=\"{author}\" "
             command += f"\"{output}\""
             print(f'[DEBUG] command is {command}')
-            subprocess.run(command, shell=True)
+            r = subprocess.run(command, shell=True)
+            r.check_returncode()
         except Exception as e:
             print('Error when converting to m4a:')
             print(e)
@@ -197,7 +198,7 @@ class TwitterSpace:
         else:
             # Delete the Directory with all of the chunks. We no longer need them.
             if keep_temp:
-                print(f'Keep mode. Temp files are saved at {chunk_dir} and {temp_aac}.')
+                print(f'--keep is enabled. Temp files are saved at {chunk_dir} and {temp_aac}.')
             else:
                 shutil.rmtree(chunk_dir)
                 temp_aac.unlink()
