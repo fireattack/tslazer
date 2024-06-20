@@ -8,3 +8,4 @@ chunks_*
 temp.txt
 /cookies.txt
 /temp.py
+*.ts

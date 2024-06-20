@@ -123,7 +123,7 @@ class TwitterSpace:
         m3u8Data = m3u8Request.text
 
         chunkList = list()
-        for chunk in re.findall(r"chunk_\d{19}_\d+_a\.aac", m3u8Data):
+        for chunk in re.findall(r"chunk_\d{19}_\d+_a\.(?:aac|ts)", m3u8Data):
             chunkList.append(urljoin(playlist_url, chunk)) # use playlist_url, NOT real_playlist_url
 
         print(f'[DEBUG] get {len(chunkList)} chunks.')
@@ -176,33 +176,45 @@ class TwitterSpace:
             s = '\n'.join([f.name for f in files])
             Path('chunks_debug.txt').write_text(s, encoding='utf-8')
 
-        temp_aac = path / f"{filename}_merged.aac"
-        output = path / f"{filename}.m4a"
-        print("Merging chunks using binary concat...")
-        concat(files, temp_aac)
-        print("Remuxing to m4a using FFMPEG...")
-        try:
-            command = f"ffmpeg -loglevel error -stats -i \"{temp_aac}\" -c copy "
-            if metadata != None:
-                title = metadata["title"]
-                author = metadata["author"]
-                command += f"-metadata title=\"{title}\" -metadata artist=\"{author}\" "
-            command += f"\"{output}\""
-            print(f'[DEBUG] command is {command}')
-            r = subprocess.run(command, shell=True)
-            r.check_returncode()
-        except Exception as e:
-            print('Error when converting to m4a:')
-            print(e)
-            print(f'Temp files are saved at {chunk_dir} and {temp_aac}.')
+        is_video = True if files[0].suffix == '.ts' else False
+        if is_video:
+            output = path / f"{filename}.ts"
+            temp = None
+            print("Merging chunks using binary concat...")
+            concat(files, output)
+            # do not try to convert to mp4.
+            # Twitter uses non-standard mpeg-ts container, which often causes issues with ffmpeg.
+
         else:
-            # Delete the Directory with all of the chunks. We no longer need them.
-            if keep_temp:
-                print(f'--keep is enabled. Temp files are saved at {chunk_dir} and {temp_aac}.')
-            else:
-                shutil.rmtree(chunk_dir)
-                temp_aac.unlink()
-            print(f"Successfully Downloaded Twitter Space {filename}.m4a")
+            temp = path / f"{filename}_merged.aac"
+            output = path / f"{filename}.m4a"
+            print("Merging chunks using binary concat...")
+            concat(files, temp)
+            print("Remuxing to m4a using FFMPEG...")
+            try:
+                command = f"ffmpeg -loglevel error -stats -i \"{temp}\" -c copy "
+                if metadata != None:
+                    title = metadata["title"]
+                    author = metadata["author"]
+                    command += f"-metadata title=\"{title}\" -metadata artist=\"{author}\" "
+                command += f"\"{output}\""
+                print(f'[DEBUG] command is {command}')
+                r = subprocess.run(command, shell=True)
+                r.check_returncode()
+            except Exception as e:
+                print('Error when converting to m4a:')
+                print(e)
+                print(f'Temp files are saved at {chunk_dir} and {temp}.')
+                return
+
+        # Delete the Directory with all of the chunks. We no longer need them.
+        if keep_temp:
+            print(f'--keep is enabled. Temp files are saved at {chunk_dir} and {temp}.')
+        else:
+            shutil.rmtree(chunk_dir)
+            if temp:
+                temp.unlink()
+        print(f"Successfully Downloaded Twitter Space at {output}")
 
     @staticmethod
     def getHeaders(guest_token=None, cookies=None):

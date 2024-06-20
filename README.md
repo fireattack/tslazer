@@ -1,5 +1,7 @@
 ### Tslazer-lite
 
+***Twitter Space and Livestream (pscp.tv) Downloader***
+
 **IMPORTANT: Since June/July 2023, you can no longer download Twitter Spaces from a Space ID without logging in. Make sure to feed in `cookies.txt` to the program using `--cookies` argument. You can still download directly from Master/Dynamic URL without cookies.**
 
 This is an almost-rewrite based on original [Tslazer v1](https://github.com/HoloArchivists/tslazer) (not the overhaul branch). The codebase is largely rewritten and refactored to be more readable and maintainable. The main goal is to make it easier to understand and modify the code.
