@@ -18,6 +18,7 @@ from util import concat, requests_retry_session, safeify, load_cookie
 
 class TwitterSpace:
     TwitterUser = collections.namedtuple('TwitterUser', ['name', 'screen_name', 'id'])
+    session = requests_retry_session()
 
     @staticmethod
     def getUser(username):
@@ -27,7 +28,7 @@ class TwitterSpace:
         :param username: A Twitter User's @ handle
         :returns: TwitterUser NamedTuple
         """
-        dataRequest = requests_retry_session().get(f"https://cdn.syndication.twimg.com/widgets/followbutton/info.json?screen_names={username}")
+        dataRequest = TwitterSpace.session.get(f"https://cdn.syndication.twimg.com/widgets/followbutton/info.json?screen_names={username}")
         dataRequest.raise_for_status()
         dataResponse = dataRequest.json()
         return TwitterSpace.TwitterUser(dataResponse[0]['name'], dataResponse[0]['screen_name'], dataResponse[0]['id'])
@@ -40,7 +41,7 @@ class TwitterSpace:
         :returns: string
         """
         headers = {"authorization" : "Bearer AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA"}
-        tokenRequest = requests_retry_session().post("https://api.twitter.com/1.1/guest/activate.json", headers=headers)
+        tokenRequest = TwitterSpace.session.post("https://api.twitter.com/1.1/guest/activate.json", headers=headers)
         tokenRequest.raise_for_status()
         tokenResponse = tokenRequest.json()
         return tokenResponse["guest_token"]
@@ -54,7 +55,7 @@ class TwitterSpace:
         :param headers: A dictionary containing the headers for the request.
         :returns: (playlist_url, chat_token)
         """
-        dataRequest = requests_retry_session().get(f"https://twitter.com/i/api/1.1/live_video_stream/status/{media_key}", headers=headers)
+        dataRequest = TwitterSpace.session.get(f"https://twitter.com/i/api/1.1/live_video_stream/status/{media_key}", headers=headers)
         dataRequest.raise_for_status()
         dataResponse = dataRequest.json()
         dataLocation = dataResponse['source']['location']
@@ -81,7 +82,7 @@ class TwitterSpace:
         variables = f"{{\"id\": \"{spaceID}\",\"isMetatagsQuery\":true,\"withSuperFollowsUserFields\":true,\"withDownvotePerspective\":false,\"withReactionsMetadata\":false,\"withReactionsPerspective\":false,\"withSuperFollowsTweetFields\":true,\"withReplays\":true}}"
         features = "{\"dont_mention_me_view_api_enabled\":true,\"interactive_text_enabled\":true,\"responsive_web_uc_gql_enabled\":false,\"vibe_tweet_context_enabled\":false,\"responsive_web_edit_tweet_api_enabled\":false,\"standardized_nudges_for_misinfo_nudges_enabled\":false}"
 
-        metadataRequest = requests_retry_session().get(f"https://twitter.com/i/api/graphql/yMLYE2ltn1nOZ5Gyk3JYSw/AudioSpaceById?variables={variables}&features={features}", headers=headers)
+        metadataRequest = TwitterSpace.session.get(f"https://twitter.com/i/api/graphql/yMLYE2ltn1nOZ5Gyk3JYSw/AudioSpaceById?variables={variables}&features={features}", headers=headers)
         metadataRequest.raise_for_status()
         metadataResponse = metadataRequest.json()
 
@@ -108,18 +109,18 @@ class TwitterSpace:
         if 'master_playlist.m3u8' in playlist_url:
             print('[DEBUG] fetch sub playlist from master playlist...')
             while True:
-                r = requests_retry_session().get(playlist_url)
+                r = TwitterSpace.session.get(playlist_url)
                 real_playlist_url = urljoin(playlist_url, r.text.split('\n')[-2])
                 playlist_name = real_playlist_url.split("/")[-1]
                 print(f'[DEBUG] current playlist_url is: {playlist_name}')
-                m3u8Request = requests_retry_session().get(real_playlist_url)
+                m3u8Request = TwitterSpace.session.get(real_playlist_url)
                 print('[DEBUG] request status code:', m3u8Request.status_code)
                 if m3u8Request.status_code == 200:
                     break
                 print(f'[DEBUG] failed to get {playlist_name} ({m3u8Request.status_code}), retry after 10 seconds...')
                 time.sleep(10)
         else:
-            m3u8Request = requests_retry_session().get(playlist_url)
+            m3u8Request = TwitterSpace.session.get(playlist_url)
         m3u8Data = m3u8Request.text
 
         chunkList = list()
@@ -148,19 +149,41 @@ class TwitterSpace:
 
         def download(chunk_url, chunk_dir):
             filename = chunk_url.split("/")[-1]
-            with requests_retry_session().get(chunk_url) as r:
-                with (chunk_dir / filename).open("wb") as chunkWriter:
-                    chunkWriter.write(r.content)
+            f = chunk_dir / filename
+            retry_count = 0
+            while retry_count < 5:
+                if retry_count > 0:
+                    print(f"\nRetry {retry_count} for chunk {filename}")
+                try:
+                    with TwitterSpace.session.get(chunk_url, timeout=5) as r:
+                        r.raise_for_status()
+                        expected_size = int(r.headers.get('Content-Length', 0))
+                        with f.open("wb") as chunkWriter:
+                            chunkWriter.write(r.content)
+                        if f.stat().st_size == expected_size:
+                            break
+                        else:
+                            print(f"\nChunk {filename} size mismatch")
+                            retry_count += 1
+                except Exception as e:
+                    print(f"\nError downloading chunk: {e}")
+                    retry_count += 1
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=20) as ex:
             futures = [ex.submit(download, chunk_url, chunk_dir) for chunk_url in chunklist]
             total = len(futures)
             finished = 0
-            for future in concurrent.futures.as_completed(futures):
-                if future.exception() is not None:
-                    print(future.exception())
-                finished += 1
-                print(f'\r{finished}/{total} chunks downloaded.      ', end='')
+            try:
+                for future in concurrent.futures.as_completed(futures):
+                    if future.exception() is not None:
+                        print(future.exception())
+                    finished += 1
+                    print(f'\r{finished}/{total} chunks downloaded.      ', end='')
+            except KeyboardInterrupt:
+                print("\nDownload interrupted by user. Aborting...")
+                for future in futures:
+                    future.cancel()
+                return
 
         print("\nFinished Downloading Chunks.")
 
@@ -184,7 +207,6 @@ class TwitterSpace:
             concat(files, output)
             # do not try to convert to mp4.
             # Twitter uses non-standard mpeg-ts container, which often causes issues with ffmpeg.
-
         else:
             temp = path / f"{filename}_merged.aac"
             output = path / f"{filename}.m4a"

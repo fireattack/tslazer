@@ -39,12 +39,14 @@ def concat(files, output):
     if not output.parent.exists():
         output.parent.mkdir(parents=True)
     out = output.open('wb')
-    for f in files:
+    for i, f in enumerate(files):
         f = Path(f)
         fi = f.open('rb')
         copyfileobj(fi, out)
         fi.close()
+        print(f'\r{i + 1}/{len(files)} chunks merged.      ', end='')
     out.close()
+    print()
 
 def load_cookie(filename):
     cj = MozillaCookieJar(filename)
