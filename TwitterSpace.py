@@ -151,11 +151,11 @@ class TwitterSpace:
             filename = chunk_url.split("/")[-1]
             f = chunk_dir / filename
             retry_count = 0
-            while retry_count < 5:
+            while retry_count < 10:
                 if retry_count > 0:
                     print(f"\nRetry {retry_count} for chunk {filename}")
                 try:
-                    with TwitterSpace.session.get(chunk_url, timeout=5) as r:
+                    with TwitterSpace.session.get(chunk_url, timeout=8) as r:
                         r.raise_for_status()
                         expected_size = int(r.headers.get('Content-Length', 0))
                         with f.open("wb") as chunkWriter:
@@ -168,6 +168,8 @@ class TwitterSpace:
                 except Exception as e:
                     print(f"\nError downloading chunk: {e}")
                     retry_count += 1
+            else:
+                raise Exception(f"Failed to download chunk {filename} after 10 retries")
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=20) as ex:
             futures = [ex.submit(download, chunk_url, chunk_dir) for chunk_url in chunklist]
@@ -176,7 +178,10 @@ class TwitterSpace:
             try:
                 for future in concurrent.futures.as_completed(futures):
                     if future.exception() is not None:
-                        print(future.exception())
+                        print('\nFatal error:', future.exception())
+                        for future in futures:
+                            future.cancel()
+                        return
                     finished += 1
                     print(f'\r{finished}/{total} chunks downloaded.      ', end='')
             except KeyboardInterrupt:
