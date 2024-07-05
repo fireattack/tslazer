@@ -146,7 +146,7 @@ class TwitterSpace:
         :returns: list of all chunks
         """
 
-        if 'master_playlist.m3u8' in playlist_url or 'master_dynamic_' in playlist_url:
+        if 'master_' in playlist_url:
             print('[DEBUG] fetch sub playlist from master playlist...')
             while True:
                 r = self.session.get(playlist_url)
@@ -164,7 +164,8 @@ class TwitterSpace:
         m3u8Data = m3u8Request.text
 
         chunkList = list()
-        for chunk in re.findall(r"chunk_\d{19}_\d+_a\.(?:aac|ts)", m3u8Data):
+        # some old videos have chunk names such as k0_chunk_1674814964619625669_2667_a.ts
+        for chunk in re.findall(r"^.*chunk_\d{19}_\d+_a\.(?:aac|ts)", m3u8Data, re.MULTILINE):
             chunkList.append(urljoin(playlist_url, chunk)) # use playlist_url, NOT real_playlist_url
 
         print(f'[DEBUG] get {len(chunkList)} chunks.')
@@ -406,6 +407,10 @@ class TwitterSpace:
             self.playlist_url = self.dyn_url
 
         # fetch the static master playlist, if the input isn't a sub-playlist already.
+
+        # Remove prefix such as https://twitter.com/i/live_video_stream/authorized_status/1618183355492859905/LIVE_PUBLIC/FnTxMDWaAAE_38D?url=https://prod-ec-ap-northeast-1.video.pscp.tv/...
+        self.playlist_url = re.sub(r"https?://(www\.)?(twitter|x)\.com/.+?\?url=", "", self.playlist_url)
+        # Replace dynamic_playlist.m3u8 with master_playlist.m3u8
         self.playlist_url = re.sub(r"(dynamic_playlist\.m3u8((?=\?)(\?type=[a-z]{4,}))?|master_(dynamic_)?playlist\.m3u8(?=\?)(\?type=[a-z]{4,}))", "master_playlist.m3u8", self.playlist_url)
 
         # if filename hasn't been set, set it to the default.
