@@ -153,17 +153,18 @@ class TwitterSpace:
             retry_count = 0
             while retry_count < 10:
                 if retry_count > 0:
-                    print(f"Retry {retry_count} for chunk {filename}")
+                    print(f"Retry {retry_count} for {filename}...")
                 try:
                     with TwitterSpace.session.get(chunk_url, timeout=8) as r:
                         r.raise_for_status()
                         expected_size = int(r.headers.get('Content-Length', 0))
                         with f.open("wb") as chunkWriter:
                             chunkWriter.write(r.content)
-                        if f.stat().st_size == expected_size:
+                        actual_size = f.stat().st_size
+                        if actual_size == expected_size:
                             break
                         else:
-                            print(f"\nChunk {filename} size mismatch")
+                            print(f"\{filename} size mismatch: expected {expected_size}, got {actual_size}")
                             retry_count += 1
                 except Exception as e:
                     print(f"\nError downloading chunk: {e}")
