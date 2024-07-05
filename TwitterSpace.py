@@ -11,9 +11,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from threading import Thread
 from urllib.parse import urljoin
+import json
 
 import WebSocketHandler
-from util import concat, requests_retry_session, safeify, load_cookie
+from utils import concat, requests_retry_session, safeify, load_cookie
 
 
 class TwitterSpace:
@@ -73,16 +74,75 @@ class TwitterSpace:
         :returns: dict
         """
         # print(f'[DEBUG] Get metadata for {space_id}...')
-        try:
-            spaceID = re.findall(r"\d[a-zA-Z]{12}", space_id)[0]
-        except Exception:
-            print("Unable to find a space ID, please try again.")
+        # https://x.com/i/broadcasts/1BRJjPBzbbBKw
+        if m := re.search(r"/i/broadcasts/(\d[a-zA-Z]{12})", space_id):
+            spaceID = m[1]
+            is_audio = False
+        elif m := re.search(r"/i/spaces/(\d[a-zA-Z]{12})", space_id):
+            spaceID = m[1]
+            is_audio = True
+        else:
+            assert re.search(r"^\d[a-zA-Z]{12}$", space_id), f"Invalid space ID: {space_id}"
+            is_audio = True
 
-        # Prepare Variables
-        variables = f"{{\"id\": \"{spaceID}\",\"isMetatagsQuery\":true,\"withSuperFollowsUserFields\":true,\"withDownvotePerspective\":false,\"withReactionsMetadata\":false,\"withReactionsPerspective\":false,\"withSuperFollowsTweetFields\":true,\"withReplays\":true}}"
-        features = "{\"dont_mention_me_view_api_enabled\":true,\"interactive_text_enabled\":true,\"responsive_web_uc_gql_enabled\":false,\"vibe_tweet_context_enabled\":false,\"responsive_web_edit_tweet_api_enabled\":false,\"standardized_nudges_for_misinfo_nudges_enabled\":false}"
+        if is_audio:
+            variables = {
+                "id": spaceID,
+                "isMetatagsQuery": True,
+                "withSuperFollowsUserFields": True,
+                "withDownvotePerspective": False,
+                "withReactionsMetadata": False,
+                "withReactionsPerspective": False,
+                "withSuperFollowsTweetFields": True,
+                "withReplays": True
+            }
+            features = {
+                "dont_mention_me_view_api_enabled": True,
+                "interactive_text_enabled": True,
+                "responsive_web_uc_gql_enabled": False,
+                "vibe_tweet_context_enabled": False,
+                "responsive_web_edit_tweet_api_enabled": False,
+                "standardized_nudges_for_misinfo_nudges_enabled": False
+            }
+            url = "https://twitter.com/i/api/graphql/yMLYE2ltn1nOZ5Gyk3JYSw/AudioSpaceById"
 
-        metadataRequest = TwitterSpace.session.get(f"https://twitter.com/i/api/graphql/yMLYE2ltn1nOZ5Gyk3JYSw/AudioSpaceById?variables={variables}&features={features}", headers=headers)
+        else:
+            variables = {
+                "id": spaceID
+            }
+            features = {
+                "creator_subscriptions_tweet_preview_api_enabled": True,
+                "communities_web_enable_tweet_community_results_fetch": True,
+                "c9s_tweet_anatomy_moderator_badge_enabled": True,
+                "articles_preview_enabled": True,
+                "rweb_tipjar_consumption_enabled": True,
+                "responsive_web_graphql_exclude_directive_enabled": True,
+                "verified_phone_label_enabled": False,
+                "tweetypie_unmention_optimization_enabled": True,
+                "responsive_web_edit_tweet_api_enabled": True,
+                "graphql_is_translatable_rweb_tweet_is_translatable_enabled": True,
+                "view_counts_everywhere_api_enabled": True,
+                "longform_notetweets_consumption_enabled": True,
+                "responsive_web_twitter_article_tweet_consumption_enabled": True,
+                "tweet_awards_web_tipping_enabled": False,
+                "creator_subscriptions_quote_tweet_preview_enabled": False,
+                "freedom_of_speech_not_reach_fetch_enabled": True,
+                "standardized_nudges_misinfo": True,
+                "tweet_with_visibility_results_prefer_gql_limited_actions_policy_enabled": True,
+                "rweb_video_timestamps_enabled": True,
+                "responsive_web_graphql_skip_user_profile_image_extensions_enabled": False,
+                "longform_notetweets_rich_text_read_enabled": True,
+                "longform_notetweets_inline_media_enabled": True,
+                "responsive_web_graphql_timeline_navigation_enabled": True,
+                "responsive_web_enhance_cards_enabled": False
+            }
+            url = "https://x.com/i/api/graphql/Ft426awxxM1206ZcaShbDw/BroadcastQuery"
+
+        variables_str = json.dumps(variables)
+        features_str = json.dumps(features)
+        params = {"variables": variables_str, "features": features_str}
+
+        metadataRequest = TwitterSpace.session.get(url, params=params, headers=headers)
         metadataRequest.raise_for_status()
         metadataResponse = metadataRequest.json()
 
