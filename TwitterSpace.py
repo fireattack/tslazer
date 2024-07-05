@@ -423,6 +423,7 @@ class TwitterSpace:
         if self.metadata is not None:
             # Print out the space Information
             type_name = type_name.capitalize()
+            suffix = '.ts' if self.type == 'video' else '.m4a'
             print(f"{type_name} Found!")
             print(f"{type_name} ID: {self.space_id}")
             print(f"{type_name} Title: {self.title}")
@@ -431,7 +432,7 @@ class TwitterSpace:
             print(f"{type_name} Host Display Name: {self.creator.name}")
             print(f"{type_name} Playlist URL:\n{self.playlist_url}")
             print(f"Chat Token:\n{self.chat_token}")
-            print(f"Downloading to {self.filename}.m4a")
+            print(f"Downloading to {self.filename}{suffix}")
             if self.state == "Running":
                 self.was_running = True
                 print("Waiting for space to end...")
