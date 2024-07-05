@@ -14,21 +14,22 @@ spaceID_group.add_argument("--space_id", "-s", help="Twitter Space/Broadcast ID 
 spaceID_group.add_argument("-v", "--video", action='store_true', help="Assume type is video when only the ID is given. It is auto inferred if the full URL is given.")
 spaceID_group.add_argument("--withchat", action='store_true', help="Export the Twitter Space's Chat")
 
-filenameformat_default = "{datetime:%y%m%d} @{host_username} {space_title}-twitter-space-{space_id}"
+filenameformat_default = "{datetime:%y%m%d} @{host_username} {space_title}-twitter-{type}-{space_id}"
 fileformat_options = """
     {host_display_name}	Host Display Name
     {host_username}     Host Username
     {host_user_id}      Host User ID
-    {space_title}       Space Title
-    {space_id}          Space ID
-    {datetime}          Space Start Time (Local)
-    {datetimeutc}       Space Start Time (UTC)
+    {space_title}       Space/Broadcast Title
+    {space_id}          Space/Broadcast ID
+    {datetime}          Space/Broadcast Start Time (Local)
+    {datetimeutc}       Space/Broadcast Start Time (UTC)
+    {type}              Type of the livestream (space or broadcast)
 Default: """ + filenameformat_default.replace("%", "%%")
 spaceID_group.add_argument("--filenameformat", "-f", default=filenameformat_default, help=f"File Format Options: {fileformat_options}")
 
 dyn_group = parser.add_argument_group("Downloading from a dynamic or master URL")
 dyn_group.add_argument("--dyn_url", "-d", help="Twitter Space Master URL or Dynamic Playlist URL")
-dyn_group.add_argument("--filename", "-o", help="Filename for the Twitter Space (default: twitter_space_{current_time:%%Y%%m%%d_%%H%%M%%S})")
+dyn_group.add_argument("--filename", "-o", help="Filename for the Twitter Space (default: twitter_{type}_{current_time:%%Y%%m%%d_%%H%%M%%S})")
 args = parser.parse_args()
 
 TwitterSpace.TwitterSpace(

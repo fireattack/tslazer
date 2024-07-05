@@ -374,8 +374,8 @@ class TwitterSpace:
 
             self.playlist_url, self.chat_token = self.get_playlist(self.media_key)
 
-            # Get the Fileformat here, so that way it won't hinder the chat exporter when it's running.
-            # Now let's format the fileformat per the user's request.
+            # Get the Filename Format here, so that way it won't hinder the chat exporter when it's running.
+            # Now let's format the `filenameformat` per the user's request.
             # File Format Options:
             #    {host_display_name} Host Display Name
             #    {host_username}     Host Username
@@ -384,7 +384,8 @@ class TwitterSpace:
             #    {space_id}          Space ID
             #    {datetime}          Space Start Time (Local)
             #    {datetimeutc}       Space Start Time (UTC)
-            if self.filenameformat is not None:
+            #    {type}              Type of the livestream (space or broadcast)
+            if self.filenameformat is not None and self.filename is None:
                 substitutes = dict(
                     host_display_name=self.creator.name,
                     host_username=self.creator.screen_name,
@@ -392,7 +393,8 @@ class TwitterSpace:
                     space_title=self.title,
                     space_id=self.space_id,
                     datetime=datetime.fromtimestamp(self.started_at/1000.0),
-                    datetimeutc=datetime.fromtimestamp(self.started_at/1000.0, tz=timezone.utc)
+                    datetimeutc=datetime.fromtimestamp(self.started_at/1000.0, tz=timezone.utc),
+                    type='space' if self.type == 'audio' else 'broadcast'
                 )
                 self.filename = self.filenameformat.format(**substitutes)
                 self.filename = safeify(self.filename)
@@ -405,8 +407,9 @@ class TwitterSpace:
 
         # fetch the static master playlist, if the input isn't a sub-playlist already.
         self.playlist_url = re.sub(r"(dynamic_playlist\.m3u8((?=\?)(\?type=[a-z]{4,}))?|master_(dynamic_)?playlist\.m3u8(?=\?)(\?type=[a-z]{4,}))", "master_playlist.m3u8", self.playlist_url)
-        type_name = 'space' if self.type == 'audio' else 'broadcast'
 
+        # if filename hasn't been set, set it to the default.
+        type_name = 'space' if self.type == 'audio' else 'broadcast'
         if not self.filename:
             self.filename = f'twitter_{type_name}_' + datetime.now().strftime('%Y%m%d_%H%M%S')
 
@@ -435,7 +438,9 @@ class TwitterSpace:
                 while self.state == "Running":
                     self.metadata = self.get_metadata(self.space_id)
                     try:
-                        self.state = self.metadata["data"]["audioSpace"]["metadata"]["state"]
+                        #TODO: live download;
+                        #TODO: check if it works for broadcast/video
+                        self.state = self.metadata["data"]["audioSpace"]["metadata"]["state"] if self.type == 'audio' else self.metadata['data']['broadcast']['state']
                         time.sleep(10)
                     except Exception:
                         self.state = "ERROR"
