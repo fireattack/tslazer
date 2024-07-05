@@ -93,7 +93,7 @@ class TwitterSpace:
         """
         When we receive the chunks from the server, we want to be able to parse that m3u8 and get all of the chunks from it.
 
-        :param playlists: space playlist url, either master_playlist or playlist_\d+ (for replay)
+        :param playlists: space playlist url, either master_playlist or playlist_\\d+ (for replay)
         :returns: list of all chunks
         """
         # when fetching from a recording, the playlist url looks like this:
@@ -103,10 +103,10 @@ class TwitterSpace:
         # https://prod-fastly-ap-northeast-1.video.pscp.tv/Transcoding/v1/hls/{somehash}/non_transcode/ap-northeast-1/periscope-replay-direct-prod-ap-northeast-1-public/audio-space/master_playlist.m3u8
         # which has a sub playlist like this:
         # https://prod-fastly-ap-northeast-1.video.pscp.tv/Transcoding/v1/hls/{somehash}/transcode/ap-northeast-1/periscope-replay-direct-prod-ap-northeast-1-public/{someconfig}/audio-space/playlist_16761019244202992663.m3u8
-        # sometimes this sub playlist is 404, you need to wait for a while and try again.
+        # sometimes this sub playlist is 404, you need to wait for awhile and try again.
         # and when get chunks, join its name to the BASE master_playlist.m3u8's URL (the one with /non_transcode/), NOT the sub playlist one (the one with /transcode/{someconfig}/}).
 
-        if 'master_playlist.m3u8' in playlist_url:
+        if 'master_playlist.m3u8' in playlist_url or 'master_dynamic_' in playlist_url:
             print('[DEBUG] fetch sub playlist from master playlist...')
             while True:
                 r = TwitterSpace.session.get(playlist_url)
@@ -153,7 +153,7 @@ class TwitterSpace:
             retry_count = 0
             while retry_count < 10:
                 if retry_count > 0:
-                    print(f"\nRetry {retry_count} for chunk {filename}")
+                    print(f"Retry {retry_count} for chunk {filename}")
                 try:
                     with TwitterSpace.session.get(chunk_url, timeout=8) as r:
                         r.raise_for_status()
@@ -270,7 +270,8 @@ class TwitterSpace:
                 "cookie": cookie_header
             }
 
-    def __init__(self, space_id=None, dyn_url=None, filename=None, filenameformat=None, path=None, withChat=False, keep_temp=False, cookies=None):
+    def __init__(self, space_id=None, dyn_url=None, filename=None, filenameformat=None, path=None,
+                 withChat=False, keep_temp=False, cookies=None, simulate=False):
         self.space_id = space_id
         self.dyn_url = dyn_url
         self.filename = filename
@@ -382,6 +383,9 @@ class TwitterSpace:
         else:
             m4aMetadata = None
         chunks = TwitterSpace.getChunks(self.playlist_url)
+        if simulate:
+            print("Simulate mode, no download will be performed.")
+            return
         TwitterSpace.downloadChunks(chunks, self.filename, self.path, m4aMetadata, keep_temp=self.keep_temp)
 
         if self.metadata != None and self.state == "Ended" and withChat == True and self.wasrunning == False:

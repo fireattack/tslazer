@@ -8,6 +8,7 @@ parser = argparse.ArgumentParser(description="Download Twitter Spaces at lazer f
 parser.add_argument("--path", "-p", type=str, default='.', help="Path to download the space")
 parser.add_argument("--keep", "-k", action='store_true', help="Keep the temporary files")
 parser.add_argument("--cookies", "--cookie", "-c", type=str, help="Twitter cookies.txt file (in Netscape format)")
+parser.add_argument("--simulate", "-S", action='store_true', help="Simulate the download process")
 
 spaceID_group = parser.add_argument_group("Downloading from a Space ID/URL")
 spaceID_group.add_argument("--space_id", "-s", type=str, help="Twitter Space ID or URL")
@@ -34,4 +35,4 @@ args = parser.parse_args()
 if args.space_id != None and args.filenameformat != None:
     TwitterSpace.TwitterSpace(space_id=args.space_id, filenameformat=args.filenameformat, path=args.path, withChat=args.withchat, keep_temp=args.keep, cookies=args.cookies)
 if args.dyn_url != None and args.filename != None:
-    TwitterSpace.TwitterSpace(dyn_url=args.dyn_url, filename=args.filename, path=args.path, keep_temp=args.keep, cookies=args.cookies)
+    TwitterSpace.TwitterSpace(dyn_url=args.dyn_url, filename=args.filename, path=args.path, keep_temp=args.keep, cookies=args.cookies, simulate=args.simulate)
