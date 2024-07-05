@@ -165,7 +165,7 @@ class TwitterSpace:
 
         chunkList = list()
         # some old videos have chunk names such as k0_chunk_1674814964619625669_2667_a.ts
-        for chunk in re.findall(r"^.*chunk_\d{19}_\d+_a\.(?:aac|ts)", m3u8Data, re.MULTILINE):
+        for chunk in re.findall(r"^.*chunk_\d{19}_\d+(?:_a)?\.(?:aac|ts)", m3u8Data, re.MULTILINE):
             chunkList.append(urljoin(playlist_url, chunk)) # use playlist_url, NOT real_playlist_url
 
         print(f'[DEBUG] get {len(chunkList)} chunks.')
@@ -197,13 +197,12 @@ class TwitterSpace:
                 try:
                     with self.session.get(chunk_url, timeout=8) as r:
                         r.raise_for_status()
+                        # sometimes the response is "chunked" and doesn't have a content-length header
                         expected_size = int(r.headers.get('Content-Length', -1))
-                        if expected_size < 0:
-                            raise Exception(f"Failed to get Content-Length for {filename}")
                         with f.open("wb") as chunkWriter:
                             chunkWriter.write(r.content)
                         actual_size = f.stat().st_size
-                        if actual_size == expected_size:
+                        if (actual_size == expected_size) or (expected_size == -1 and actual_size > 0):
                             break
                         else:
                             print(f"\{filename} size mismatch: expected {expected_size}, got {actual_size}")
@@ -360,7 +359,7 @@ class TwitterSpace:
                 except KeyError:
                     self.creator = TwitterUser("Protected_User", "Protected", "0")
             else:
-                self.title = self.metadata['data']['broadcast']['status']
+                self.title = self.metadata['data']['broadcast'].get('status', 'Untitled Broadcast')
                 self.media_key = self.metadata['data']['broadcast']['media_key']
                 self.state = self.metadata['data']['broadcast']['state']
                 self.started_at = self.metadata['data']['broadcast']['start_time']
