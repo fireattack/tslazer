@@ -49,6 +49,7 @@ To get chunks, simply fetch the content of this sub-playlist. But to get the bes
 For live (video) broadcast, the url returned by the API looks like this:
 
     https://prod-ec-ap-northeast-1.video.pscp.tv/Transcoding/v1/hls/et7l8-1w_IfKg_2avCodsJLiUONtwHkogQMIJ920sFyfwtPrPtJnBqIn-P6yxAjpWMv6G9Thry5RolyE58kQLg/non_transcode/ap-northeast-1/periscope-replay-direct-prod-ap-northeast-1-public/master_dynamic_playlist.m3u8?type=live
+    https://prod-ec-ap-northeast-1.video.pscp.tv/Transcoding/v1/hls/et7l8-1w_IfKg_2avCodsJLiUONtwHkogQMIJ920sFyfwtPrPtJnBqIn-P6yxAjpWMv6G9Thry5RolyE58kQLg/non_transcode/ap-northeast-1/periscope-replay-direct-prod-ap-northeast-1-public/master_dynamic_highlatency.m3u8?type=live
 
 which would have various /transcode/ sub-playlists like:
 

@@ -405,12 +405,17 @@ class TwitterSpace:
             self.type = 'audio' if '/audio-space/' in self.dyn_url else 'video'
             self.playlist_url = self.dyn_url
 
-        # fetch the static master playlist, if the input isn't a sub-playlist already.
+        print('[DEBUG] raw playlist_url:', self.playlist_url)
 
+        # fetch the static master playlist, if the input isn't a sub-playlist already.
         # Remove prefix such as https://twitter.com/i/live_video_stream/authorized_status/1618183355492859905/LIVE_PUBLIC/FnTxMDWaAAE_38D?url=https://prod-ec-ap-northeast-1.video.pscp.tv/...
         self.playlist_url = re.sub(r"https?://(www\.)?(twitter|x)\.com/.+?\?url=", "", self.playlist_url)
-        # Replace dynamic_playlist.m3u8 with master_playlist.m3u8
-        self.playlist_url = re.sub(r"(dynamic_playlist\.m3u8((?=\?)(\?type=[a-z]{4,}))?|master_(dynamic_)?playlist\.m3u8(?=\?)(\?type=[a-z]{4,}))", "master_playlist.m3u8", self.playlist_url)
+
+        base, name = self.playlist_url.rsplit('/', 1)
+        if m := re.search(r'(master_)?(dynamic_)?(playlist_)?(?P<timestamp>\d+)\.m3u8(\?.+)?', name):
+            self.playlist_url = f'{base}/playlist_{m["timestamp"]}.m3u8'
+        else:
+            self.playlist_url = f'{base}/master_playlist.m3u8'
 
         # if filename hasn't been set, set it to the default.
         type_name = 'space' if self.type == 'audio' else 'broadcast'
