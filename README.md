@@ -2,7 +2,7 @@
 
 ***Twitter Space and Broadcast (pscp.tv) Downloader***
 
-**IMPORTANT: Since June/July 2023, you can no longer download Twitter Spaces from a Space/Broadcast ID without logging in. Make sure to feed in `cookies.txt` to the program using `--cookies` argument. You can still download directly from Master/Dynamic URL without cookies.**
+**IMPORTANT: Since Oct 2024, downloading from a Space/Broadcast ID without logging is working again. But it is still recommended to use cookies to prevent limiting in future.**
 
 This is an almost-rewrite based on original [Tslazer v1](https://github.com/HoloArchivists/tslazer) (not the overhaul branch). The codebase is largely rewritten and refactored to be more readable and maintainable. The main goal is to make it easier to understand and modify the code.
 

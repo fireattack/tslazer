@@ -330,11 +330,11 @@ class TwitterSpace:
 
         if self.space_id is not None:
             if self.cookies is None:
-                # guest_token = self.getGuestToken()
-                print('[Error] Download from a Space ID without cookies is no longer supported.')
-                return
-            cookies = load_cookie(self.cookies)
-            self.set_headers(cookies=cookies)
+                guest_token = self.get_guest_token()
+                self.set_headers(guest_token=guest_token)
+            else:
+                cookies = load_cookie(self.cookies)
+                self.set_headers(cookies=cookies)
             self.metadata = self.get_metadata(self.space_id)
             if 'errors' in self.metadata:
                 print(f"Error: {self.metadata['errors'][0]['message']}")
