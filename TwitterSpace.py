@@ -67,15 +67,15 @@ class TwitterSpace:
         # https://x.com/i/broadcasts/1BRJjPBzbbBKw
         if m := re.search(r"/i/broadcasts/(\d[a-zA-Z]{12})", space_id):
             space_id = m[1]
-            self.type = 'video'
+            self.type = 'broadcast'
         elif m := re.search(r"/i/spaces/(\d[a-zA-Z]{12})", space_id):
             space_id = m[1]
-            self.type = 'audio'
+            self.type = 'space'
         else:
             assert re.search(r"^\d[a-zA-Z]{12}$", space_id), f"Invalid space ID: {space_id}"
         self.space_id = space_id
 
-        if self.type == 'audio':
+        if self.type == 'space':
             variables = {
                 "id": space_id,
                 "isMetatagsQuery": True,
@@ -205,7 +205,7 @@ class TwitterSpace:
                         if (actual_size == expected_size) or (expected_size == -1 and actual_size > 0):
                             break
                         else:
-                            print(f"\{filename} size mismatch: expected {expected_size}, got {actual_size}")
+                            print(f"{filename} size mismatch: expected {expected_size}, got {actual_size}")
                             retry_count += 1
                 except Exception as e:
                     print(f"\nError downloading chunk: {e}")
@@ -246,8 +246,8 @@ class TwitterSpace:
             s = '\n'.join([f.name for f in files])
             Path('chunks_debug.txt').write_text(s, encoding='utf-8')
 
-        self.type == 'video' if files[0].suffix == '.ts' else 'audio'
-        if self.type == 'video':
+        self.media_type == 'video' if files[0].suffix == '.ts' else 'audio'
+        if self.media_type == 'video':
             output = path / f"{filename}.ts"
             temp = None
             print("Merging chunks using binary concat...")
@@ -313,7 +313,7 @@ class TwitterSpace:
             })
 
     def __init__(self, space_id=None, dyn_url=None, filename=None, filenameformat=None, path=None,
-                 with_chat=False, keep_temp=False, cookies=None, type_='audio', simulate=False, threads=20):
+                 with_chat=False, keep_temp=False, cookies=None, type_='space', simulate=False, threads=20):
         self.space_id = space_id
         self.dyn_url = dyn_url
         self.filename = filename
@@ -325,6 +325,7 @@ class TwitterSpace:
         self.keep_temp = keep_temp
         self.cookies = cookies
         self.type = type_
+        self.media_type = 'audio' if type_ == 'space' else 'broadcast'
         self.threads = threads
         self.session = requests_retry_session()
 
@@ -339,7 +340,7 @@ class TwitterSpace:
             if 'errors' in self.metadata:
                 print(f"Error: {self.metadata['errors'][0]['message']}")
                 return
-            if self.type == 'audio':
+            if self.type == 'space':
                 try:
                     self.title = self.metadata['data']['audioSpace']['metadata']['title']
                 except Exception:
@@ -373,6 +374,8 @@ class TwitterSpace:
                     self.creator = TwitterUser("Protected_User", "Protected", "0")
 
             self.playlist_url, self.chat_token = self.get_playlist(self.media_key)
+            # Space now could be video or audio
+            self.media_type = 'audio' if '/audio-space/' in self.playlist_url else 'video'
 
             # Get the Filename Format here, so that way it won't hinder the chat exporter when it's running.
             # Now let's format the `filenameformat` per the user's request.
@@ -402,7 +405,12 @@ class TwitterSpace:
         # this is when the user provides a dynamic url
         else:
             assert self.dyn_url is not None, "No URL provided"
-            self.type = 'audio' if '/audio-space/' in self.dyn_url else 'video'
+            if '/audio-space/' in self.dyn_url:
+                self.type = 'space'
+                self.media_type = 'audio'
+            else:
+                self.type = 'broadcast'
+                self.media_type = 'video'
             self.playlist_url = self.dyn_url
 
         print('[DEBUG] raw playlist_url:', self.playlist_url)
@@ -418,12 +426,12 @@ class TwitterSpace:
             self.playlist_url = f'{base}/master_playlist.m3u8'
 
         # if filename hasn't been set, set it to the default.
-        type_name = 'space' if self.type == 'audio' else 'broadcast'
         if not self.filename:
-            self.filename = f'twitter_{type_name}_' + datetime.now().strftime('%Y%m%d_%H%M%S')
+            self.filename = f'twitter_{self.type}_' + datetime.now().strftime('%Y%m%d_%H%M%S')
 
-        # Now Start a subprocess for running the chat exporter
-        if with_chat == True and self.metadata is not None and self.type == 'audio':
+        # NOT TESTED
+        # Now start a subprocess for running the chat exporter
+        if with_chat == True and self.metadata is not None and self.type == 'space':
             print("[ChatExporter] Chat Exporting is currently only supported for Ended Spaces with a recording. To Export Chat for a live space, copy the chat token and use WebSocketDriver.py.")
             chatThread = Thread(target=WebSocketHandler.SpaceChat, args=(self.chat_token, self.filename, self.path,))
             #chatThread.start()
@@ -431,10 +439,11 @@ class TwitterSpace:
         # Print out the Space Information and wait for the Space to End (if it's running)
         if self.metadata is not None:
             # Print out the space Information
-            type_name = type_name.capitalize()
-            suffix = '.ts' if self.type == 'video' else '.m4a'
+            type_name = self.type.capitalize()
+            suffix = '.ts' if self.media_type == 'video' else '.m4a'
             print(f"{type_name} Found!")
             print(f"{type_name} ID: {self.space_id}")
+            print(f"{type_name} Type: {self.media_type}")
             print(f"{type_name} Title: {self.title}")
             print(f'{type_name} Current State: {self.state}')
             print(f"{type_name} Host Username: {self.creator.screen_name}")
@@ -448,9 +457,8 @@ class TwitterSpace:
                 while self.state == "Running":
                     self.metadata = self.get_metadata(self.space_id)
                     try:
-                        #TODO: live download;
-                        #TODO: check if it works for broadcast/video
-                        self.state = self.metadata["data"]["audioSpace"]["metadata"]["state"] if self.type == 'audio' else self.metadata['data']['broadcast']['state']
+                        #TODO: live download
+                        self.state = self.metadata["data"]["audioSpace"]["metadata"]["state"] if self.type == 'space' else self.metadata['data']['broadcast']['state']
                         time.sleep(10)
                     except Exception:
                         self.state = "ERROR"

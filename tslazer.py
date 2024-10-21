@@ -11,7 +11,7 @@ parser.add_argument("--simulate", "-S", action='store_true', help="Simulate the 
 
 spaceID_group = parser.add_argument_group("Downloading from a Space/Broadcast ID/URL")
 spaceID_group.add_argument("--space_id", "-s", help="Twitter Space/Broadcast ID or URL")
-spaceID_group.add_argument("-v", "--video", action='store_true', help="Assume type is video when only the ID is given. It is auto inferred if the full URL is given.")
+spaceID_group.add_argument("--video", "-v", "-b", action='store_true', help="Assume type is broadcast (instead of space) when only the ID is given. It is auto inferred if the full URL is given.")
 spaceID_group.add_argument("--withchat", action='store_true', help="Export the Twitter Space's Chat")
 
 filenameformat_default = "{datetime:%y%m%d} @{host_username} {space_title}-twitter-{type}-{space_id}"
@@ -37,5 +37,5 @@ TwitterSpace.TwitterSpace(
     dyn_url=args.dyn_url, filename=args.filename,
     path=args.path, with_chat=args.withchat, keep_temp=args.keep,
     cookies=args.cookies, simulate=args.simulate,
-    type_="video" if args.video else "audio", threads=args.threads
+    type_="broadcast" if args.video else "space", threads=args.threads
 )
