@@ -6,8 +6,9 @@ parser = argparse.ArgumentParser(description="Download Twitter Spaces at lazer f
 parser.add_argument("--path", "-p", default='.', help="Path to download the space")
 parser.add_argument("--keep", "-k", action='store_true', help="Keep the temporary files")
 parser.add_argument("--cookies", "--cookie", "-c", help="Twitter cookies.txt file (in Netscape format)")
-parser.add_argument("-t", "--threads", type=int, default=20, help="Number of threads to use for downloading")
+parser.add_argument("--threads", "-t", type=int, default=20, help="Number of threads to use for downloading")
 parser.add_argument("--simulate", "-S", action='store_true', help="Simulate the download process")
+parser.add_argument("--debug", action='store_true', help="Enable debug logging. Will be automatically enabled if --simulate is used")
 
 spaceID_group = parser.add_argument_group("Downloading from a Space/Broadcast ID/URL")
 spaceID_group.add_argument("--space_id", "-s", help="Twitter Space/Broadcast ID or URL")
@@ -33,9 +34,10 @@ dyn_group.add_argument("--filename", "-o", help="Filename for the Twitter Space 
 args = parser.parse_args()
 
 TwitterSpace.TwitterSpace(
-    space_id=args.space_id, filenameformat=args.filenameformat,
+    url_or_space_id=args.space_id, filenameformat=args.filenameformat,
     dyn_url=args.dyn_url, filename=args.filename,
     path=args.path, with_chat=args.withchat, keep_temp=args.keep,
     cookies=args.cookies, simulate=args.simulate,
-    type_="broadcast" if args.video else "space", threads=args.threads
+    type_="broadcast" if args.video else "space", threads=args.threads,
+    debug=args.debug or args.simulate
 )

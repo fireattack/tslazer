@@ -56,6 +56,18 @@ class TwitterSpace:
 
         return dataLocation, chatToken
 
+    def parse_url_or_space_id(self, url_or_space_id):
+        if m := re.search(r"/i/broadcasts/(\d[a-zA-Z]{12})", url_or_space_id):
+            space_id = m[1]
+            self.type = 'broadcast'
+        elif m := re.search(r"/i/spaces/(\d[a-zA-Z]{12})", url_or_space_id):
+            space_id = m[1]
+            self.type = 'space'
+        else:
+            assert re.search(r"^\d[a-zA-Z]{12}$", url_or_space_id), f"Invalid ID or URL: {url_or_space_id}"
+            space_id = url_or_space_id
+        self.space_id = space_id
+
     def get_metadata(self, space_id):
         """
         Retrieve the Metadata for a given twitter space ID or URL.
@@ -63,18 +75,6 @@ class TwitterSpace:
 
         :returns: dict
         """
-        # print(f'[DEBUG] Get metadata for {space_id}...')
-        # https://x.com/i/broadcasts/1BRJjPBzbbBKw
-        if m := re.search(r"/i/broadcasts/(\d[a-zA-Z]{12})", space_id):
-            space_id = m[1]
-            self.type = 'broadcast'
-        elif m := re.search(r"/i/spaces/(\d[a-zA-Z]{12})", space_id):
-            space_id = m[1]
-            self.type = 'space'
-        else:
-            assert re.search(r"^\d[a-zA-Z]{12}$", space_id), f"Invalid space ID: {space_id}"
-        self.space_id = space_id
-
         if self.type == 'space':
             variables = {
                 "id": space_id,
@@ -95,7 +95,6 @@ class TwitterSpace:
                 "standardized_nudges_for_misinfo_nudges_enabled": False
             }
             url = "https://twitter.com/i/api/graphql/yMLYE2ltn1nOZ5Gyk3JYSw/AudioSpaceById"
-
         else:
             variables = {
                 "id": space_id
@@ -147,17 +146,17 @@ class TwitterSpace:
         """
 
         if 'master_' in playlist_url:
-            print('[DEBUG] fetch sub playlist from master playlist...')
+            self.debug and print('[DEBUG] fetch sub playlist from master playlist...')
             while True:
                 r = self.session.get(playlist_url)
                 real_playlist_url = urljoin(playlist_url, r.text.split('\n')[-2])
                 playlist_name = real_playlist_url.split("/")[-1]
-                print(f'[DEBUG] current playlist_url is: {playlist_name}')
+                self.debug and print(f'[DEBUG] current playlist_url is: {playlist_name}')
                 m3u8Request = self.session.get(real_playlist_url)
-                print('[DEBUG] request status code:', m3u8Request.status_code)
+                self.debug and print('[DEBUG] request status code:', m3u8Request.status_code)
                 if m3u8Request.status_code == 200:
                     break
-                print(f'[DEBUG] failed to get {playlist_name} ({m3u8Request.status_code}), retry after 10 seconds...')
+                self.debug and print(f'[DEBUG] failed to get {playlist_name} ({m3u8Request.status_code}), retry after 10 seconds...')
                 time.sleep(10)
         else:
             m3u8Request = self.session.get(playlist_url)
@@ -168,7 +167,7 @@ class TwitterSpace:
         for chunk in re.findall(r"^.*chunk_\d{19}_\d+(?:_a)?\.(?:aac|ts)", m3u8Data, re.MULTILINE):
             chunkList.append(urljoin(playlist_url, chunk)) # use playlist_url, NOT real_playlist_url
 
-        print(f'[DEBUG] get {len(chunkList)} chunks.')
+        print(f'Get {len(chunkList)} chunks.')
         assert len(chunkList) > 0, "No chunks found in m3u8"
         return chunkList
 
@@ -262,12 +261,12 @@ class TwitterSpace:
             print("Remuxing to m4a using FFMPEG...")
             try:
                 command = f"ffmpeg -loglevel error -stats -i \"{temp}\" -c copy "
-                if metadata != None:
+                if metadata is not None:
                     title = metadata["title"]
                     author = metadata["author"]
                     command += f"-metadata title=\"{title}\" -metadata artist=\"{author}\" "
                 command += f"\"{output}\""
-                print(f'[DEBUG] command is {command}')
+                self.debug and print(f'[DEBUG] command is {command}')
                 r = subprocess.run(command, shell=True)
                 r.check_returncode()
             except Exception as e:
@@ -312,10 +311,12 @@ class TwitterSpace:
                 "cookie": cookie_header
             })
 
-    def __init__(self, space_id=None, dyn_url=None, filename=None, filenameformat=None, path=None,
-                 with_chat=False, keep_temp=False, cookies=None, type_='space', simulate=False, threads=20):
-        self.space_id = space_id
+    def __init__(self, url_or_space_id=None, dyn_url=None, filename=None, filenameformat=None, path=None,
+                 with_chat=False, keep_temp=False, cookies=None, type_='space', simulate=False, threads=20, debug=False):
+        self.space_id = None
         self.dyn_url = dyn_url
+        self.playlist_url = None
+        self.chat_token = None
         self.filename = filename
         self.filenameformat = filenameformat
         self.path = path
@@ -325,9 +326,15 @@ class TwitterSpace:
         self.keep_temp = keep_temp
         self.cookies = cookies
         self.type = type_
-        self.media_type = 'audio' if type_ == 'space' else 'broadcast'
+        self.media_type = None
         self.threads = threads
+        self.debug = debug
+
         self.session = requests_retry_session()
+
+        # set space id and type (if URL given) inplace
+        if url_or_space_id:
+            self.parse_url_or_space_id(url_or_space_id)
 
         if self.space_id is not None:
             if self.cookies is None:
@@ -342,16 +349,6 @@ class TwitterSpace:
                 return
             if self.type == 'space':
                 try:
-                    self.title = self.metadata['data']['audioSpace']['metadata']['title']
-                except Exception:
-                    self.title = self.metadata["data"]["audioSpace"]["metadata"]["creator_results"]["result"]["legacy"]["screen_name"].__add__("\'s space") # IF We couldn't get the space Title, just use twitter's default here.
-
-                self.media_key = self.metadata["data"]["audioSpace"]["metadata"]["media_key"]
-                self.state = self.metadata["data"]["audioSpace"]["metadata"]["state"]
-                self.created_at = self.metadata["data"]["audioSpace"]["metadata"]["created_at"]
-                self.started_at = self.metadata["data"]["audioSpace"]["metadata"]["started_at"]
-                self.updated_at = self.metadata["data"]["audioSpace"]["metadata"]["updated_at"]
-                try:
                     self.creator = TwitterUser(
                         self.metadata["data"]["audioSpace"]["metadata"]["creator_results"]["result"]["legacy"]["name"],
                         self.metadata["data"]["audioSpace"]["metadata"]["creator_results"]["result"]["legacy"]["screen_name"],
@@ -359,6 +356,15 @@ class TwitterSpace:
                         )
                 except KeyError:
                     self.creator = TwitterUser("Protected_User", "Protected", "0")
+                try:
+                    self.title = self.metadata['data']['audioSpace']['metadata']['title']
+                except Exception:
+                    self.title = self.creator + "\'s space"
+                self.media_key = self.metadata["data"]["audioSpace"]["metadata"]["media_key"]
+                self.state = self.metadata["data"]["audioSpace"]["metadata"]["state"]
+                self.created_at = self.metadata["data"]["audioSpace"]["metadata"]["created_at"]
+                self.started_at = self.metadata["data"]["audioSpace"]["metadata"]["started_at"]
+                self.updated_at = self.metadata["data"]["audioSpace"]["metadata"]["updated_at"]
             else:
                 self.title = self.metadata['data']['broadcast'].get('status', 'Untitled Broadcast')
                 self.media_key = self.metadata['data']['broadcast']['media_key']
@@ -372,10 +378,10 @@ class TwitterSpace:
                         )
                 except KeyError:
                     self.creator = TwitterUser("Protected_User", "Protected", "0")
-
-            self.playlist_url, self.chat_token = self.get_playlist(self.media_key)
-            # Space now could be video or audio
-            self.media_type = 'audio' if '/audio-space/' in self.playlist_url else 'video'
+            try:
+                self.playlist_url, self.chat_token = self.get_playlist(self.media_key)
+            except:
+                print("Warning: failed to get playlist url and chat token from metadata. If no playlist url is provided, the program will exit.")
 
             # Get the Filename Format here, so that way it won't hinder the chat exporter when it's running.
             # Now let's format the `filenameformat` per the user's request.
@@ -397,23 +403,23 @@ class TwitterSpace:
                     space_id=self.space_id,
                     datetime=datetime.fromtimestamp(self.started_at/1000.0),
                     datetimeutc=datetime.fromtimestamp(self.started_at/1000.0, tz=timezone.utc),
-                    type='space' if self.type == 'audio' else 'broadcast'
+                    type=self.type
                 )
                 self.filename = self.filenameformat.format(**substitutes)
                 self.filename = safeify(self.filename)
 
         # this is when the user provides a dynamic url
-        else:
-            assert self.dyn_url is not None, "No URL provided"
-            if '/audio-space/' in self.dyn_url:
-                self.type = 'space'
-                self.media_type = 'audio'
-            else:
-                self.type = 'broadcast'
-                self.media_type = 'video'
+        # it can be used to override the playlist URL given from media_key
+        if self.dyn_url:
             self.playlist_url = self.dyn_url
+            # try to decide the type only if the space_id is not provided;
+            # because the type should have already been confirmed in the previous step otherwise.
+            if not self.space_id:
+                self.type = 'space' if '/audio-space/' in self.dyn_url else 'broadcast'
 
-        print('[DEBUG] raw playlist_url:', self.playlist_url)
+        # Space now could be video or audio so set the media type based on the playlist url.
+        self.media_type = 'audio' if '/audio-space/' in self.playlist_url else 'video'
+        self.debug and print('[DEBUG] unmodified raw playlist_url:', self.playlist_url)
 
         # fetch the static master playlist, if the input isn't a sub-playlist already.
         # Remove prefix such as https://twitter.com/i/live_video_stream/authorized_status/1618183355492859905/LIVE_PUBLIC/FnTxMDWaAAE_38D?url=https://prod-ec-ap-northeast-1.video.pscp.tv/...
@@ -431,11 +437,15 @@ class TwitterSpace:
 
         # NOT TESTED
         # Now start a subprocess for running the chat exporter
-        if with_chat == True and self.metadata is not None and self.type == 'space':
-            print("[ChatExporter] Chat Exporting is currently only supported for Ended Spaces with a recording. To Export Chat for a live space, copy the chat token and use WebSocketDriver.py.")
-            chatThread = Thread(target=WebSocketHandler.SpaceChat, args=(self.chat_token, self.filename, self.path,))
+        if with_chat == True and self.type == 'space':
+            if self.chat_token is None:
+                print('[ChatExporter] Chat Token is None. Chat Exporting will not be performed.')
+            else:
+                print("[ChatExporter] Chat Exporting is currently only supported for Ended Spaces with a recording. To Export Chat for a live space, copy the chat token and use WebSocketDriver.py.")
+                chatThread = Thread(target=WebSocketHandler.SpaceChat, args=(self.chat_token, self.filename, self.path,))
             #chatThread.start()
 
+        m4a_metadata = None
         # Print out the Space Information and wait for the Space to End (if it's running)
         if self.metadata is not None:
             # Print out the space Information
@@ -451,6 +461,8 @@ class TwitterSpace:
             print(f"{type_name} Playlist URL:\n{self.playlist_url}")
             print(f"Chat Token:\n{self.chat_token}")
             print(f"Downloading to {self.filename}{suffix}")
+            m4a_metadata = {"title" : self.title, "author" : self.creator.screen_name}
+
             if self.state == "Running":
                 self.was_running = True
                 print("Waiting for space to end...")
@@ -464,17 +476,13 @@ class TwitterSpace:
                         self.state = "ERROR"
                 print("Space Ended. Wait 1 minute for the recording to be processed.")
                 time.sleep(60)
-        if self.metadata is not None:
-            m4aMetadata = {"title" : self.title, "author" : self.creator.screen_name}
-        else:
-            m4aMetadata = None
 
         chunks = self.get_chunks(self.playlist_url)
         if simulate:
             print("Simulate mode, no download will be performed.")
             return
-        self.download_chunks(chunks, self.filename, self.path, m4aMetadata, keep_temp=self.keep_temp)
+        self.download_chunks(chunks, self.filename, self.path, m4a_metadata, keep_temp=self.keep_temp)
 
-        if self.metadata is not None and self.state == "Ended" and with_chat == True and self.was_running == False:
+        if with_chat == True and self.chat_token is not None and self.state == "Ended" and self.was_running == False:
             chatThread.start() # If We're Downloading a Recording, we're all good to download the chat.
             print("[ChatExporter]: Chat Thread Started")
