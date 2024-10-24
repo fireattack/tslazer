@@ -417,6 +417,9 @@ class TwitterSpace:
             if not self.space_id:
                 self.type = 'space' if '/audio-space/' in self.dyn_url else 'broadcast'
 
+        if not self.playlist_url:
+            raise ValueError("No playlist URL fetched or provided. Please check your input.")
+
         # Space now could be video or audio so set the media type based on the playlist url.
         self.media_type = 'audio' if '/audio-space/' in self.playlist_url else 'video'
         self.debug and print('[DEBUG] unmodified raw playlist_url:', self.playlist_url)
