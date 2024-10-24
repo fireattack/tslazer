@@ -12,7 +12,7 @@ parser.add_argument("--debug", action='store_true', help="Enable debug logging. 
 
 spaceID_group = parser.add_argument_group("Downloading from a Space/Broadcast ID/URL")
 spaceID_group.add_argument("--space_id", "-s", help="Twitter Space/Broadcast ID or URL")
-spaceID_group.add_argument("--video", "-v", "-b", action='store_true', help="Assume type is broadcast (instead of space) when only the ID is given. It is auto inferred if the full URL is given.")
+spaceID_group.add_argument("--video", "--broadcast", "-v", "-b", action='store_true', help="Assume type is broadcast (instead of space) when only the ID is given. It is auto inferred if the full URL is given.")
 spaceID_group.add_argument("--withchat", action='store_true', help="Export the Twitter Space's Chat")
 
 filenameformat_default = "{datetime:%y%m%d} @{host_username} {space_title}-twitter-{type}-{space_id}"
