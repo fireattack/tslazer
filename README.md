@@ -1,5 +1,4 @@
-### Tslazer-lite
-
+## Tslazer-lite
 ***Twitter Space and Broadcast (pscp.tv) Downloader***
 
 **IMPORTANT: Since Oct 2024, downloading from a Space/Broadcast ID without logging is working again. But it is still recommended to use cookies to prevent limiting in future.**
@@ -13,8 +12,10 @@ Some significant changes:
 - When merging raw AACs (ADTS), it now uses binary concatenation instead of ffmpeg concat filter. This is to work around a bug in ffmpeg concat that causes the audio to be having wrong duration. See [this thread](https://www.reddit.com/r/ffmpeg/comments/13pds8a/why_does_concatenate_raw_aac_files_directly_into/) I created on Reddit for more info. It will still be remuxed into MP4 by ffmpeg in the end.
 - It always downloads the original non-transcoded chunks to get the best quality (especially for videos).
 
-#### Typical command examples
+### Requirements
+This program requires `ffmpeg` binary to work. Make sure you have one in your `PATH`.
 
+### Typical command examples
 |  Supported Inputs | Example | Note |
 | :------------: | -------------- | -------------- |
 | Space ID | `tslazer -s 1ZkJzbdvLgyJv` | It is recommanded to use `-c cookies.txt` with it. |
@@ -23,10 +24,7 @@ Some significant changes:
 | Master/Dynamic URL| `tslazer -d "https://prod-fastly-ap-northeast-2.video.pscp.tv/Transcoding/....m3u8"` | Any master/dynamic m3u8 URL will work. |
 | Space ID and Master/Dynamic URL | `tslazer -s {ID} -d "https://prod-fastly-ap-northeast-2.video.pscp.tv/Transcoding/....m3u8"` | You can use the combination of both for Spaces that are already ended. This way, metadata can be fetched from the Space ID. |
 
-### Requirements
-This program requires `ffmpeg` binary to work. Make sure you have one in your `PATH`.
-
-#### Usage
+### Detailed Usage
     usage: tslazer.py [-h] [--path PATH] [--keep] [--cookies COOKIES] [--threads THREADS] [--simulate] [--debug] [--space_id SPACE_ID] [--video] [--withchat] [--filenameformat FILENAMEFORMAT]
                       [--dyn_url DYN_URL] [--filename FILENAME]
 
