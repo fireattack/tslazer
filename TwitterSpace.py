@@ -131,11 +131,46 @@ class TwitterSpace:
         features_str = json.dumps(features)
         params = {"variables": variables_str, "features": features_str}
 
-        metadataRequest = self.session.get(url, params=params)
-        metadataRequest.raise_for_status()
-        metadataResponse = metadataRequest.json()
+        metadata_response = self.session.get(url, params=params, timeout=10)
+        metadata_response.raise_for_status()
+        self.metadata = metadata_response.json()
+        if 'errors' in self.metadata:
+            print(f"Error: {self.metadata['errors'][0]['message']}")
+            quit()
 
-        return metadataResponse
+    def update_metadata(self, space_id):
+        self.get_metadata(space_id)
+
+        if self.type == 'space':
+            metadata = self.metadata['data']['audioSpace']['metadata']
+            try:
+                self.creator = TwitterUser(
+                    metadata["creator_results"]["result"]["legacy"]["name"],
+                    metadata["creator_results"]["result"]["legacy"]["screen_name"],
+                    metadata["creator_results"]["result"]["rest_id"]
+                    )
+            except KeyError:
+                self.creator = TwitterUser("Protected_User", "Protected", "0")
+            self.title = metadata.get('title') or self.creator.name + "\'s Space"
+            self.media_key = metadata["media_key"]
+            self.state = metadata["state"]
+            self.created_at = metadata["created_at"]
+            self.started_at = metadata.get("started_at") or metadata.get('scheduled_start')
+            self.updated_at = metadata["updated_at"]
+        else:
+            metadata = self.metadata['data']['broadcast']
+            self.title = metadata.get('status', 'Untitled Broadcast')
+            self.media_key = metadata['media_key']
+            self.state = metadata['state']
+            self.started_at = metadata.get('start_time') or '' # TODO: find the scheduled start time key
+            try:
+                self.creator = TwitterUser(
+                    metadata['user_results']["result"]["legacy"]['name'],
+                    metadata['user_results']["result"]["legacy"]["screen_name"],
+                    metadata['user_results']["result"]["rest_id"]
+                    )
+            except KeyError:
+                self.creator = TwitterUser("Protected_User", "Protected", "0")
 
     def get_chunks(self, playlist_url):
         """
@@ -311,13 +346,50 @@ class TwitterSpace:
                 "cookie": cookie_header
             })
 
+    def generate_filename(self):
+        '''
+        Get the Filename Format here, so that way it won't hinder the chat exporter when it's running.
+        Now let's format the `filenameformat` per the user's request.
+        File Format Options:
+        {host_display_name} Host Display Name
+        {host_username}     Host Username
+        {host_user_id}      Host User ID
+        {space_title}       Space Title
+        {space_id}          Space ID
+        {datetime}          Space Start Time (Local)
+        {datetimeutc}       Space Start Time (UTC)
+        {type}              Type of the livestream (space or broadcast)
+        '''
+        if self.given_filename:
+            self.filename = safeify(self.given_filename)
+            return
+        old_filename = self.filename
+        if self.filenameformat is not None:
+            substitutes = dict(
+                host_display_name=self.creator.name,
+                host_username=self.creator.screen_name,
+                host_user_id=self.creator.id,
+                space_title=self.title,
+                space_id=self.space_id,
+                datetime=datetime.fromtimestamp(self.started_at/1000.0),
+                datetimeutc=datetime.fromtimestamp(self.started_at/1000.0, tz=timezone.utc),
+                type=self.type
+            )
+            self.filename = self.filenameformat.format(**substitutes)
+            self.filename = safeify(self.filename)
+        else:
+            self.filename = f'twitter_{self.type}_' + datetime.now().strftime('%Y%m%d_%H%M%S')
+        if old_filename is not None and self.filename != old_filename:
+            print(f"Filename updated to: {self.filename}")
+
     def __init__(self, url_or_space_id=None, dyn_url=None, filename=None, filenameformat=None, path=None,
                  with_chat=False, keep_temp=False, cookies=None, type_='space', simulate=False, threads=20, debug=False):
         self.space_id = None
         self.dyn_url = dyn_url
         self.playlist_url = None
         self.chat_token = None
-        self.filename = filename
+        self.given_filename = filename
+        self.filename = None
         self.filenameformat = filenameformat
         self.path = path
         self.metadata = None
@@ -335,7 +407,7 @@ class TwitterSpace:
         # set space id and type (if URL given) inplace
         if url_or_space_id:
             self.parse_url_or_space_id(url_or_space_id)
-
+        # if space is is given, we can try to retrieve the metadata.
         if self.space_id is not None:
             if self.cookies is None:
                 guest_token = self.get_guest_token()
@@ -343,71 +415,22 @@ class TwitterSpace:
             else:
                 cookies = load_cookie(self.cookies)
                 self.set_headers(cookies=cookies)
-            self.metadata = self.get_metadata(self.space_id)
-            if 'errors' in self.metadata:
-                print(f"Error: {self.metadata['errors'][0]['message']}")
+            self.update_metadata(self.space_id)
+
+            # if the space is scheduled, wait for it to start
+            try:
+                while self.state == 'NotStarted':
+                    time_to_start = datetime.fromtimestamp(self.started_at/1000.0) - datetime.now()
+                    print(f"Waiting for space to start (in {time_to_start})...")
+                    time.sleep(10)
+                    self.update_metadata(self.space_id)
+            except KeyboardInterrupt:
+                print("\nAborted by user.")
                 return
-            if self.type == 'space':
-                try:
-                    self.creator = TwitterUser(
-                        self.metadata["data"]["audioSpace"]["metadata"]["creator_results"]["result"]["legacy"]["name"],
-                        self.metadata["data"]["audioSpace"]["metadata"]["creator_results"]["result"]["legacy"]["screen_name"],
-                        self.metadata["data"]["audioSpace"]["metadata"]["creator_results"]["result"]["rest_id"]
-                        )
-                except KeyError:
-                    self.creator = TwitterUser("Protected_User", "Protected", "0")
-                try:
-                    self.title = self.metadata['data']['audioSpace']['metadata']['title']
-                except Exception:
-                    self.title = self.creator + "\'s space"
-                self.media_key = self.metadata["data"]["audioSpace"]["metadata"]["media_key"]
-                self.state = self.metadata["data"]["audioSpace"]["metadata"]["state"]
-                self.created_at = self.metadata["data"]["audioSpace"]["metadata"]["created_at"]
-                self.started_at = self.metadata["data"]["audioSpace"]["metadata"]["started_at"]
-                self.updated_at = self.metadata["data"]["audioSpace"]["metadata"]["updated_at"]
-            else:
-                self.title = self.metadata['data']['broadcast'].get('status', 'Untitled Broadcast')
-                self.media_key = self.metadata['data']['broadcast']['media_key']
-                self.state = self.metadata['data']['broadcast']['state']
-                self.started_at = self.metadata['data']['broadcast']['start_time']
-                try:
-                    self.creator = TwitterUser(
-                        self.metadata['data']['broadcast']['user_results']["result"]["legacy"]['name'],
-                        self.metadata['data']['broadcast']['user_results']["result"]["legacy"]["screen_name"],
-                        self.metadata['data']['broadcast']['user_results']["result"]["rest_id"]
-                        )
-                except KeyError:
-                    self.creator = TwitterUser("Protected_User", "Protected", "0")
             try:
                 self.playlist_url, self.chat_token = self.get_playlist(self.media_key)
             except:
                 print("Warning: failed to get playlist url and chat token from metadata. If no playlist url is provided, the program will exit.")
-
-            # Get the Filename Format here, so that way it won't hinder the chat exporter when it's running.
-            # Now let's format the `filenameformat` per the user's request.
-            # File Format Options:
-            #    {host_display_name} Host Display Name
-            #    {host_username}     Host Username
-            #    {host_user_id}      Host User ID
-            #    {space_title}       Space Title
-            #    {space_id}          Space ID
-            #    {datetime}          Space Start Time (Local)
-            #    {datetimeutc}       Space Start Time (UTC)
-            #    {type}              Type of the livestream (space or broadcast)
-            if self.filenameformat is not None and self.filename is None:
-                substitutes = dict(
-                    host_display_name=self.creator.name,
-                    host_username=self.creator.screen_name,
-                    host_user_id=self.creator.id,
-                    space_title=self.title,
-                    space_id=self.space_id,
-                    datetime=datetime.fromtimestamp(self.started_at/1000.0),
-                    datetimeutc=datetime.fromtimestamp(self.started_at/1000.0, tz=timezone.utc),
-                    type=self.type
-                )
-                self.filename = self.filenameformat.format(**substitutes)
-                self.filename = safeify(self.filename)
-
         # this is when the user provides a dynamic url
         # it can be used to override the playlist URL given from media_key
         if self.dyn_url:
@@ -434,10 +457,7 @@ class TwitterSpace:
         else:
             self.playlist_url = f'{base}/master_playlist.m3u8'
 
-        # if filename hasn't been set, set it to the default.
-        if not self.filename:
-            self.filename = f'twitter_{self.type}_' + datetime.now().strftime('%Y%m%d_%H%M%S')
-
+        self.generate_filename()
         # NOT TESTED
         # Now start a subprocess for running the chat exporter
         if with_chat == True and self.type == 'space':
@@ -449,9 +469,8 @@ class TwitterSpace:
             #chatThread.start()
 
         m4a_metadata = None
-        # Print out the Space Information and wait for the Space to End (if it's running)
         if self.metadata is not None:
-            # Print out the space Information
+            # Print out the space/broadcast information
             type_name = self.type.capitalize()
             suffix = '.ts' if self.media_type == 'video' else '.m4a'
             print(f"{type_name} Found!")
@@ -467,13 +486,13 @@ class TwitterSpace:
             m4a_metadata = {"title" : self.title, "author" : self.creator.screen_name}
 
             if self.state == "Running":
-                self.was_running = True
+                self.was_running = True # this is only useful for chat exporter
                 print("Waiting for space to end...")
                 while self.state == "Running":
-                    self.metadata = self.get_metadata(self.space_id)
                     try:
                         #TODO: live download
-                        self.state = self.metadata["data"]["audioSpace"]["metadata"]["state"] if self.type == 'space' else self.metadata['data']['broadcast']['state']
+                        self.update_metadata(self.space_id)
+                        self.generate_filename() # update filename if the space title changes
                         time.sleep(10)
                     except Exception:
                         self.state = "ERROR"

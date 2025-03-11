@@ -9,7 +9,7 @@ from urllib3.util.retry import Retry
 
 # Modified from https://www.peterbe.com/plog/best-practice-with-retries-with-requests
 def requests_retry_session(
-    retries=5,
+    retries=3,
     backoff_factor=0.2,
     status_forcelist=None, # (500, 502, 504)
     session=None,
