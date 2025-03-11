@@ -15,8 +15,8 @@ spaceID_group.add_argument("--space_id", "-s", help="Twitter Space/Broadcast ID 
 spaceID_group.add_argument("--video", "--broadcast", "-v", "-b", action='store_true', help="Assume type is broadcast (instead of space) when only the ID is given. It is auto inferred if the full URL is given.")
 spaceID_group.add_argument("--withchat", action='store_true', help="Export the Twitter Space's Chat")
 
-filenameformat_default = "{datetime:%y%m%d} @{host_username} {space_title}-twitter-{type}-{space_id}"
-fileformat_options = """
+filename_format_default = "{datetime:%y%m%d} @{host_username} {space_title}-twitter-{type}-{space_id}"
+filename_format_options = """
     {host_display_name}	Host Display Name
     {host_username}     Host Username
     {host_user_id}      Host User ID
@@ -25,8 +25,8 @@ fileformat_options = """
     {datetime}          Space/Broadcast Start Time (Local)
     {datetimeutc}       Space/Broadcast Start Time (UTC)
     {type}              Type of the livestream (space or broadcast)
-Default: """ + filenameformat_default.replace("%", "%%")
-spaceID_group.add_argument("--filenameformat", "-f", default=filenameformat_default, help=f"File Format Options: {fileformat_options}")
+Default: """ + filename_format_default.replace("%", "%%")
+spaceID_group.add_argument("--filename-format", "-f", default=filename_format_default, help=f"Filename Format Options: {filename_format_options}")
 
 dyn_group = parser.add_argument_group("Downloading from a dynamic or master URL")
 dyn_group.add_argument("--dyn_url", "-d", help="Twitter Space Master URL or Dynamic Playlist URL")
@@ -34,7 +34,7 @@ dyn_group.add_argument("--filename", "-o", help="Filename for the Twitter Space 
 args = parser.parse_args()
 
 TwitterSpace.TwitterSpace(
-    url_or_space_id=args.space_id, filenameformat=args.filenameformat,
+    url_or_space_id=args.space_id, filename_format=args.filename_format,
     dyn_url=args.dyn_url, filename=args.filename,
     path=args.path, with_chat=args.withchat, keep_temp=args.keep,
     cookies=args.cookies, simulate=args.simulate,

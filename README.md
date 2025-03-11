@@ -25,8 +25,8 @@ This program requires `ffmpeg` binary to work. Make sure you have one in your `P
 | Space ID and Master/Dynamic URL | `tslazer -s {ID} -d "https://prod-fastly-ap-northeast-2.video.pscp.tv/Transcoding/....m3u8"` | You can use the combination of both for Spaces that are already ended. This way, metadata can be fetched from the Space ID. |
 
 ### Detailed Usage
-    usage: tslazer.py [-h] [--path PATH] [--keep] [--cookies COOKIES] [--threads THREADS] [--simulate] [--debug] [--space_id SPACE_ID] [--video] [--withchat] [--filenameformat FILENAMEFORMAT]
-                      [--dyn_url DYN_URL] [--filename FILENAME]
+    usage: tslazer.py [-h] [--path PATH] [--keep] [--cookies COOKIES] [--threads THREADS] [--simulate] [--debug] [--space_id SPACE_ID] [--video] [--withchat]
+                      [--filename-format FILENAME_FORMAT] [--dyn_url DYN_URL] [--filename FILENAME]
 
     Download Twitter Spaces at lazer fast speeds!
 
@@ -47,8 +47,8 @@ This program requires `ffmpeg` binary to work. Make sure you have one in your `P
       --video, --broadcast, -v, -b
                             Assume type is broadcast (instead of space) when only the ID is given. It is auto inferred if the full URL is given.
       --withchat            Export the Twitter Space's Chat
-      --filenameformat FILENAMEFORMAT, -f FILENAMEFORMAT
-                            File Format Options:
+      --filename-format FILENAME_FORMAT, -f FILENAME_FORMAT
+                            Filename Format Options:
                                 {host_display_name} Host Display Name
                                 {host_username}     Host Username
                                 {host_user_id}      Host User ID

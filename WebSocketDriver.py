@@ -17,5 +17,5 @@ if args.path == None:
 if args.chatToken == None or args.filename == None:
     print("Missing A Required Argument!")
 else:
-    # self.playlists.chatToken, self.filenameformat, self.path
+    # self.playlists.chatToken, self.filename_format, self.path
     WebSocketHandler.SpaceChat(args.chatToken, args.filename, args.path)

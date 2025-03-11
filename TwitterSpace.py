@@ -348,9 +348,7 @@ class TwitterSpace:
 
     def generate_filename(self):
         '''
-        Get the Filename Format here, so that way it won't hinder the chat exporter when it's running.
-        Now let's format the `filenameformat` per the user's request.
-        File Format Options:
+        Filename Format Options:
         {host_display_name} Host Display Name
         {host_username}     Host Username
         {host_user_id}      Host User ID
@@ -360,11 +358,12 @@ class TwitterSpace:
         {datetimeutc}       Space Start Time (UTC)
         {type}              Type of the livestream (space or broadcast)
         '''
+
         if self.given_filename:
             self.filename = safeify(self.given_filename)
             return
         old_filename = self.filename
-        if self.filenameformat is not None:
+        if self.filename_format is not None:
             substitutes = dict(
                 host_display_name=self.creator.name,
                 host_username=self.creator.screen_name,
@@ -375,14 +374,14 @@ class TwitterSpace:
                 datetimeutc=datetime.fromtimestamp(self.started_at/1000.0, tz=timezone.utc),
                 type=self.type
             )
-            self.filename = self.filenameformat.format(**substitutes)
+            self.filename = self.filename_format.format(**substitutes)
             self.filename = safeify(self.filename)
         else:
             self.filename = f'twitter_{self.type}_' + datetime.now().strftime('%Y%m%d_%H%M%S')
         if old_filename is not None and self.filename != old_filename:
             print(f"Filename updated to: {self.filename}")
 
-    def __init__(self, url_or_space_id=None, dyn_url=None, filename=None, filenameformat=None, path=None,
+    def __init__(self, url_or_space_id=None, dyn_url=None, filename=None, filename_format=None, path=None,
                  with_chat=False, keep_temp=False, cookies=None, type_='space', simulate=False, threads=20, debug=False):
         self.space_id = None
         self.dyn_url = dyn_url
@@ -390,7 +389,7 @@ class TwitterSpace:
         self.chat_token = None
         self.given_filename = filename
         self.filename = None
-        self.filenameformat = filenameformat
+        self.filename_format = filename_format
         self.path = path
         self.metadata = None
         self.playlists = None
