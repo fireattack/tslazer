@@ -162,7 +162,7 @@ class TwitterSpace:
             self.title = metadata.get('status', 'Untitled Broadcast')
             self.media_key = metadata['media_key']
             self.state = metadata['state']
-            self.started_at = metadata.get('start_time') or '' # TODO: find the scheduled start time key
+            self.started_at = metadata.get('start_time') or metadata.get('scheduled_start_time')
             try:
                 self.creator = TwitterUser(
                     metadata['user_results']["result"]["legacy"]['name'],
