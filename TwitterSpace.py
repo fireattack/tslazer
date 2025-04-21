@@ -451,10 +451,15 @@ class TwitterSpace:
         self.playlist_url = re.sub(r"https?://(www\.)?(twitter|x)\.com/.+?\?url=", "", self.playlist_url)
 
         base, name = self.playlist_url.rsplit('/', 1)
-        if m := re.search(r'(master_)?(dynamic_)?(playlist_)?(?P<timestamp>\d+)\.m3u8(\?.+)?', name):
-            self.playlist_url = f'{base}/playlist_{m["timestamp"]}.m3u8'
+        # get prefix, if any
+        if name.split('_')[0] not in ['master', 'playlist', 'dynamic']:
+            prefix = name.split('_')[0] + '_'
         else:
-            self.playlist_url = f'{base}/master_playlist.m3u8'
+            prefix = ''
+        if m := re.search(r'(master_)?(dynamic_)?(playlist_)?(?P<timestamp>\d+)\.m3u8(\?.+)?', name):
+            self.playlist_url = f'{base}/{prefix}playlist_{m["timestamp"]}.m3u8'
+        else:
+            self.playlist_url = f'{base}/{prefix}master_playlist.m3u8'
 
         self.generate_filename()
         # NOT TESTED
