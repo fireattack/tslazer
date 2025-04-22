@@ -6,11 +6,12 @@
 This is an almost-rewrite based on original [Tslazer v1](https://github.com/HoloArchivists/tslazer) (not the overhaul branch). The codebase is largely rewritten and refactored to be more readable and maintainable. The main goal is to make it easier to understand and modify the code.
 
 Some significant changes:
+- It now always downloads the original non-transcoded chunks to get the best quality (especially for videos).
+- Added Support for downloading AES encrypted streams.
 - Filename format (and filename if using dyn_url directly) now has a sensible default. So you don't need to always specify it.
 - Changed filename format templating to use python's [string formatting](https://docs.python.org/3/library/string.html#format-string-syntax) instead of custom templating. This allows for more flexibility. For example, you can now use `{datetime:%y%m%d}` to get the date in `yymmdd` format.
 - Added retry for all the requests.
 - When merging raw AACs (ADTS), it now uses binary concatenation instead of ffmpeg concat filter. This is to work around a bug in ffmpeg concat that causes the audio to be having wrong duration. See [this thread](https://www.reddit.com/r/ffmpeg/comments/13pds8a/why_does_concatenate_raw_aac_files_directly_into/) I created on Reddit for more info. It will still be remuxed into MP4 by ffmpeg in the end.
-- It always downloads the original non-transcoded chunks to get the best quality (especially for videos).
 
 ### Requirements
 This program requires `ffmpeg` binary to work. Make sure you have one in your `PATH`.
