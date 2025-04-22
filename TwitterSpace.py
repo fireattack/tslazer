@@ -10,9 +10,10 @@ from pathlib import Path
 from threading import Thread
 from urllib.parse import urljoin
 
-import WebSocketHandler
-from utils import concat, load_cookie, requests_retry_session, safeify
+import m3u8
 
+import WebSocketHandler
+from utils import concat, decode, load_cookie, requests_retry_session, safeify
 
 TwitterUser = collections.namedtuple('TwitterUser', ['name', 'screen_name', 'id'])
 
@@ -183,34 +184,33 @@ class TwitterSpace:
         if 'master_' in playlist_url:
             self.debug and print('[DEBUG] fetch sub playlist from master playlist...')
             while True:
-                r = self.session.get(playlist_url)
-                real_playlist_url = urljoin(playlist_url, r.text.split('\n')[-2])
+                r = self.session.get(playlist_url, timeout=10)
+                master_m3u8_obj = m3u8.loads(r.text, uri=playlist_url)
+                assert master_m3u8_obj.is_variant, "Expected a master playlist"
+                assert len(master_m3u8_obj.playlists) > 0, "No sub-playlists found in the master playlist"
+                real_playlist_url = master_m3u8_obj.playlists[-1].absolute_uri
                 playlist_name = real_playlist_url.split("/")[-1]
                 self.debug and print(f'[DEBUG] current playlist_url is: {playlist_name}')
-                m3u8Request = self.session.get(real_playlist_url)
-                self.debug and print('[DEBUG] request status code:', m3u8Request.status_code)
-                if m3u8Request.status_code == 200:
+                r2 = self.session.get(real_playlist_url, timeout=10)
+                self.debug and print('[DEBUG] request status code:', r2.status_code)
+                if r2.status_code == 200:
                     break
-                self.debug and print(f'[DEBUG] failed to get {playlist_name} ({m3u8Request.status_code}), retry after 10 seconds...')
+                print(f'[WARN] failed to get {playlist_name} ({r2.status_code}), retry after 10 seconds...')
                 time.sleep(10)
         else:
-            m3u8Request = self.session.get(playlist_url)
-        m3u8Data = m3u8Request.text
+            r2 = self.session.get(playlist_url)
+        m3u8_obj = m3u8.loads(r2.text, uri=playlist_url)
+        chunks = m3u8_obj.segments
+        print(f'Get {len(chunks)} chunks.')
+        assert len(chunks) > 0, "No chunks found in m3u8"
+        return chunks
 
-        chunkList = list()
-        # some old videos have chunk names such as k0_chunk_1674814964619625669_2667_a.ts
-        for chunk in re.findall(r"^.*chunk_\d{19}_\d+(?:_a)?\.(?:aac|ts)", m3u8Data, re.MULTILINE):
-            chunkList.append(urljoin(playlist_url, chunk)) # use playlist_url, NOT real_playlist_url
-
-        print(f'Get {len(chunkList)} chunks.')
-        assert len(chunkList) > 0, "No chunks found in m3u8"
-        return chunkList
-
-    def download_chunks(self, chunklist, filename, path='.', metadata=None, keep_temp=False):
+    def download_chunks(self, chunks, base_url, filename, path='.', metadata=None, keep_temp=False):
         """
         Download all of the chunks from the m3u8 to a specified path.
 
-        :param chunklist: list of chunks
+        :param chunks: list of chunks
+        :param base_url: the base url of the playlist.
         :param filename: Name of the file we want to write the data to
         :param path: the path to download the chunks to
         :param metadata: any additional metadata that we would like to write to the m4a
@@ -221,7 +221,7 @@ class TwitterSpace:
         chunk_dir = path / ('chunks_' + str(int(datetime.now().timestamp())) + '_' + filename)
         chunk_dir.mkdir()
 
-        def download(chunk_url, chunk_dir):
+        def download(chunk_url, key=None, iv=None, chunk_dir=None):
             filename = chunk_url.split("/")[-1]
             f = chunk_dir / filename
             retry_count = 0
@@ -233,13 +233,16 @@ class TwitterSpace:
                         r.raise_for_status()
                         # sometimes the response is "chunked" and doesn't have a content-length header
                         expected_size = int(r.headers.get('Content-Length', -1))
-                        with f.open("wb") as chunkWriter:
-                            chunkWriter.write(r.content)
-                        actual_size = f.stat().st_size
+                        bytes_ = r.content
+                        actual_size = len(bytes_)
                         if (actual_size == expected_size) or (expected_size == -1 and actual_size > 0):
+                            if key is not None and iv is not None:
+                                bytes_ = decode(bytes_, key, iv)
+                            with f.open("wb") as fio:
+                                fio.write(bytes_)
                             break
                         else:
-                            print(f"{filename} size mismatch: expected {expected_size}, got {actual_size}")
+                            print(f"[WARN] Size mismatch: expected {expected_size}, got {actual_size}")
                             retry_count += 1
                 except Exception as e:
                     print(f"\nError downloading chunk: {e}")
@@ -248,7 +251,28 @@ class TwitterSpace:
                 raise Exception(f"Failed to download chunk {filename} after 10 retries")
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=self.threads) as ex:
-            futures = [ex.submit(download, chunk_url, chunk_dir) for chunk_url in chunklist]
+            aes_noted = False
+            futures = []
+            cached_keys = {}
+            for chunk in chunks:
+                #NOTE: do NOT use chunk.absolute_uri, which has the wrong (lower-quality) url.
+                chunk_url = urljoin(base_url, chunk.uri)
+                if chunk.keys:
+                    if not aes_noted:
+                        print("[WARN] AES encryption detected. Will decrypt the chunks.")
+                        aes_noted = True
+                    assert len(chunk.keys) == 1, "Only one key is supported"
+                    key_url = chunk.keys[0].absolute_uri
+                    if key_url in cached_keys:
+                        key = cached_keys[key_url]
+                    else:
+                        key = self.session.get(key_url).content
+                        self.debug and print(f'[DEBUG] add key for {key_url} to cache: {key.hex()}')
+                        cached_keys[key_url] = key
+                    iv = bytes.fromhex(chunk.keys[0].iv[2:])
+                else:
+                    key, iv = None, None
+                futures.append(ex.submit(download, chunk_url, key, iv, chunk_dir))
             total = len(futures)
             finished = 0
             try:
@@ -270,8 +294,8 @@ class TwitterSpace:
 
         # Verify, and the files will be automatically in order
         files = []
-        for chunk_url in chunklist:
-            f = chunk_dir / chunk_url.split("/")[-1]
+        for chunk in chunks:
+            f = chunk_dir / chunk.uri
             assert f.exists(), f"Chunk {f.name} does not exist!"
             files.append(f)
 
@@ -363,7 +387,7 @@ class TwitterSpace:
             self.filename = safeify(self.given_filename)
             return
         old_filename = self.filename
-        if self.filename_format is not None:
+        if self.filename_format is not None and self.metadata is not None:
             substitutes = dict(
                 host_display_name=self.creator.name,
                 host_username=self.creator.screen_name,
@@ -429,7 +453,7 @@ class TwitterSpace:
             try:
                 self.playlist_url, self.chat_token = self.get_playlist(self.media_key)
             except:
-                print("Warning: failed to get playlist url and chat token from metadata. If no playlist url is provided, the program will exit.")
+                print("[WARN] failed to get playlist url and chat token from metadata. If no playlist url is provided, the program will exit.")
         # this is when the user provides a dynamic url
         # it can be used to override the playlist URL given from media_key
         if self.dyn_url:
@@ -507,7 +531,7 @@ class TwitterSpace:
         if simulate:
             print("Simulate mode, no download will be performed.")
             return
-        self.download_chunks(chunks, self.filename, self.path, m4a_metadata, keep_temp=self.keep_temp)
+        self.download_chunks(chunks, self.playlist_url, self.filename, self.path, m4a_metadata, keep_temp=self.keep_temp)
 
         if with_chat == True and self.chat_token is not None and self.state == "Ended" and self.was_running == False:
             chatThread.start() # If We're Downloading a Recording, we're all good to download the chat.

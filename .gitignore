@@ -5,7 +5,7 @@ __pycache__/
 chunks_*
 *.m4a
 *.aac
-temp.txt
+temp*
 /cookies.txt
 /temp.py
 *.ts

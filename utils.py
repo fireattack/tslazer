@@ -3,6 +3,8 @@ from pathlib import Path
 from shutil import copyfileobj
 
 import requests
+from Crypto.Cipher import AES
+from Crypto.Util.Padding import unpad
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
@@ -52,3 +54,16 @@ def load_cookie(filename):
     cj = MozillaCookieJar(filename)
     cj.load(ignore_expires=True, ignore_discard=True)
     return {cookie.name: cookie.value for cookie in cj}
+
+
+def decode(bytes_, key, iv):
+    """Decrypt a file using AES CBC with the provided key and IV.
+    Args:
+        bytes_ (bytes): The encrypted data to decrypt.
+        key (bytes): The AES key used for decryption.
+        iv (bytes): The initialization vector used for decryption.
+    Returns:
+        bytes: The decrypted data.
+    """
+    cipher = AES.new(key, AES.MODE_CBC, iv=iv)
+    return unpad(cipher.decrypt(bytes_), AES.block_size)

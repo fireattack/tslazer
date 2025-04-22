@@ -1,2 +1,4 @@
 requests
 urllib3
+pycryptodome
+m3u8
