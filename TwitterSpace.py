@@ -199,13 +199,14 @@ class TwitterSpace:
                 time.sleep(10)
         else:
             r2 = self.session.get(playlist_url)
+        # Always use playlist_url as the base url instead of the sub-playlist url to get non-transcoding chunks.
         m3u8_obj = m3u8.loads(r2.text, uri=playlist_url)
         chunks = m3u8_obj.segments
         print(f'Get {len(chunks)} chunks.')
         assert len(chunks) > 0, "No chunks found in m3u8"
         return chunks
 
-    def download_chunks(self, chunks, base_url, filename, path='.', metadata=None, keep_temp=False):
+    def download_chunks(self, chunks, filename, path='.', metadata=None, keep_temp=False):
         """
         Download all of the chunks from the m3u8 to a specified path.
 
@@ -255,21 +256,19 @@ class TwitterSpace:
             futures = []
             cached_keys = {}
             for chunk in chunks:
-                #NOTE: do NOT use chunk.absolute_uri, which has the wrong (lower-quality) url.
-                chunk_url = urljoin(base_url, chunk.uri)
-                if chunk.keys:
+                chunk_url = chunk.absolute_uri
+                if key_obj := hasattr(chunk, 'keys') and chunk.keys and chunk.keys[0] or hasattr(chunk, 'key') and chunk.key:
                     if not aes_noted:
                         print("[WARN] AES encryption detected. Will decrypt the chunks.")
                         aes_noted = True
-                    assert len(chunk.keys) == 1, "Only one key is supported"
-                    key_url = chunk.keys[0].absolute_uri
+                    key_url = key_obj.absolute_uri
                     if key_url in cached_keys:
                         key = cached_keys[key_url]
                     else:
                         key = self.session.get(key_url).content
                         self.debug and print(f'[DEBUG] add key for {key_url} to cache: {key.hex()}')
                         cached_keys[key_url] = key
-                    iv = bytes.fromhex(chunk.keys[0].iv[2:])
+                    iv = bytes.fromhex(key_obj.iv[2:])
                 else:
                     key, iv = None, None
                 futures.append(ex.submit(download, chunk_url, key, iv, chunk_dir))
@@ -531,7 +530,7 @@ class TwitterSpace:
         if simulate:
             print("Simulate mode, no download will be performed.")
             return
-        self.download_chunks(chunks, self.playlist_url, self.filename, self.path, m4a_metadata, keep_temp=self.keep_temp)
+        self.download_chunks(chunks, self.filename, self.path, m4a_metadata, keep_temp=self.keep_temp)
 
         if with_chat == True and self.chat_token is not None and self.state == "Ended" and self.was_running == False:
             chatThread.start() # If We're Downloading a Recording, we're all good to download the chat.
