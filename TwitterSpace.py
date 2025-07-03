@@ -484,6 +484,11 @@ class TwitterSpace:
         else:
             self.playlist_url = f'{base}/{prefix}master_playlist.m3u8'
 
+        # Replace transcode url with non-transcode url
+        # from /transcode/{server_region}/{server_deploy}/{transcode_settings}/
+        # to /non_transcode/{server_region}/{server_deploy}/
+        self.playlist_url = re.sub(r'/transcode/([^/]+/[^/]+/)[^/]+/', r'/non_transcode/\1', self.playlist_url)
+
         self.generate_filename()
         # NOT TESTED
         # Now start a subprocess for running the chat exporter
