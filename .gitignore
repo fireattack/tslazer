@@ -10,3 +10,4 @@ temp*
 /temp.py
 *.ts
 temp.json
+/test.py
