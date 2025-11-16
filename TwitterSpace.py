@@ -95,6 +95,7 @@ class TwitterSpace:
                 "responsive_web_edit_tweet_api_enabled": False,
                 "standardized_nudges_for_misinfo_nudges_enabled": False
             }
+            #TODO: update to latest graphql url when possible
             url = "https://twitter.com/i/api/graphql/yMLYE2ltn1nOZ5Gyk3JYSw/AudioSpaceById"
         else:
             variables = {
@@ -156,8 +157,8 @@ class TwitterSpace:
             metadata = self.metadata['data']['audioSpace']['metadata']
             try:
                 self.creator = TwitterUser(
-                    metadata["creator_results"]["result"]["legacy"]["name"],
-                    metadata["creator_results"]["result"]["legacy"]["screen_name"],
+                    metadata["creator_results"]["result"]["core"]["name"],
+                    metadata["creator_results"]["result"]["core"]["screen_name"],
                     metadata["creator_results"]["result"]["rest_id"]
                     )
             except KeyError:
@@ -176,8 +177,8 @@ class TwitterSpace:
             self.started_at = metadata.get('start_time') or metadata.get('scheduled_start_time')
             try:
                 self.creator = TwitterUser(
-                    metadata['user_results']["result"]["legacy"]['name'],
-                    metadata['user_results']["result"]["legacy"]["screen_name"],
+                    metadata['user_results']["result"]["core"]['name'],
+                    metadata['user_results']["result"]["core"]["screen_name"],
                     metadata['user_results']["result"]["rest_id"]
                     )
             except KeyError:
