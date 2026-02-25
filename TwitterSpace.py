@@ -483,11 +483,15 @@ class TwitterSpace:
 
             # if the space is scheduled, wait for it to start
             try:
+                has_waited = False
                 while self.state == 'NotStarted':
                     time_to_start = datetime.fromtimestamp(self.started_at/1000.0) - datetime.now()
-                    print(f"Waiting for space to start (in {time_to_start})...")
+                    print(f"Waiting for space to start (in {time_to_start})...", end='\r')
+                    has_waited = True
                     time.sleep(10)
                     self.update_metadata(self.space_id)
+                if has_waited:
+                    print() # print a new line after the waiting loop to clear the last \r
             except KeyboardInterrupt:
                 print("\nAborted by user.")
                 return
