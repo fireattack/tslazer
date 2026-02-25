@@ -170,9 +170,13 @@ class TwitterSpace:
         metadata_response = self.session.get(url, params=params, timeout=10)
         metadata_response.raise_for_status()
         self.metadata = metadata_response.json()
+
         if 'errors' in self.metadata:
-            print(f"Error: {self.metadata['errors'][0]['message']}")
-            quit()
+            print(f"Warning: Received errors in metadata response. It may not affect the downloading process, but be aware that some information may be missing or incorrect.")
+            for error in self.metadata['errors']:
+                print(f"  {error.get('kind', 'Unknown error type')}: {error.get('message', 'No message provided')}")
+            print('  Raw error response:\n' + json.dumps(self.metadata['errors'], indent=2))
+
 
     def update_metadata(self, space_id):
         self.get_metadata(space_id)
