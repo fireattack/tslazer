@@ -18,6 +18,9 @@ from utils import concat, decode, load_cookie, requests_retry_session, safeify
 TwitterUser = collections.namedtuple('TwitterUser', ['name', 'screen_name', 'id'])
 
 class TwitterSpace:
+    BEARER_TOKEN = "AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA"
+    USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36'
+
     def get_user(self, username):
         """
         Get Twitter User ID
@@ -36,8 +39,7 @@ class TwitterSpace:
 
         :returns: string
         """
-        headers = {"authorization" : "Bearer AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA"}
-        tokenRequest = self.session.post("https://api.twitter.com/1.1/guest/activate.json", headers=headers)
+        tokenRequest = self.session.post("https://api.twitter.com/1.1/guest/activate.json")
         tokenRequest.raise_for_status()
         tokenResponse = tokenRequest.json()
         return tokenResponse["guest_token"]
@@ -394,21 +396,16 @@ class TwitterSpace:
 
         :raises AssertionError: If both guest_token and cookies are None.
         """
-        USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36'
         assert guest_token is not None or cookies is not None, 'guest_token or cookies must be provided.'
         if guest_token:
             self.session.headers.update({
-                "authorization": "Bearer AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA",
                 "x-guest-token": guest_token,
-                'user-agent': USER_AGENT,
             })
         else:
             cookie_header = "; ".join([f"{name}={value}" for name, value in cookies.items()])
             self.session.headers.update({
-                "authorization": "Bearer AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA",
                 "x-csrf-token": cookies['ct0'],
                 "cookie": cookie_header,
-                'user-agent': USER_AGENT,
             })
 
     def generate_filename(self):
@@ -467,6 +464,10 @@ class TwitterSpace:
         self.debug = debug
 
         self.session = requests_retry_session()
+        self.session.headers.update({
+            "authorization": f"Bearer {self.BEARER_TOKEN}",
+            "user-agent": self.USER_AGENT,
+        })
 
         # set space id and type (if URL given) inplace
         if url_or_space_id:
@@ -475,6 +476,7 @@ class TwitterSpace:
         if self.space_id is not None:
             if self.cookies is None:
                 guest_token = self.get_guest_token()
+                print(f"Generated Guest Token: {guest_token}")
                 self.set_headers(guest_token=guest_token)
             else:
                 cookies = load_cookie(self.cookies)
