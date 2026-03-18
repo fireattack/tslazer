@@ -510,32 +510,31 @@ class TwitterSpace:
             if not self.space_id:
                 self.type = 'space' if '/audio-space/' in self.dyn_url else 'broadcast'
 
-        if not self.playlist_url:
-            raise ValueError("No playlist URL fetched or provided. Please check your input.")
+        # get the 'best' playlist URL.
+        if self.playlist_url:
+            # Space could now be video too; so set the media type based on the playlist url.
+            self.media_type = 'audio' if '/audio-space/' in self.playlist_url else 'video'
+            self.debug and print('[DEBUG] unmodified raw playlist_url:', self.playlist_url)
 
-        # Space now could be video or audio so set the media type based on the playlist url.
-        self.media_type = 'audio' if '/audio-space/' in self.playlist_url else 'video'
-        self.debug and print('[DEBUG] unmodified raw playlist_url:', self.playlist_url)
+            # fetch the static master playlist, if the input isn't a sub-playlist already.
+            # Remove prefix such as https://twitter.com/i/live_video_stream/authorized_status/1618183355492859905/LIVE_PUBLIC/FnTxMDWaAAE_38D?url=https://prod-ec-ap-northeast-1.video.pscp.tv/...
+            self.playlist_url = re.sub(r"https?://(www\.)?(twitter|x)\.com/.+?\?url=", "", self.playlist_url)
 
-        # fetch the static master playlist, if the input isn't a sub-playlist already.
-        # Remove prefix such as https://twitter.com/i/live_video_stream/authorized_status/1618183355492859905/LIVE_PUBLIC/FnTxMDWaAAE_38D?url=https://prod-ec-ap-northeast-1.video.pscp.tv/...
-        self.playlist_url = re.sub(r"https?://(www\.)?(twitter|x)\.com/.+?\?url=", "", self.playlist_url)
+            base, name = self.playlist_url.rsplit('/', 1)
+            # get prefix, if any
+            if name.split('_')[0] not in ['master', 'playlist', 'dynamic']:
+                prefix = name.split('_')[0] + '_'
+            else:
+                prefix = ''
+            if m := re.search(r'(master_)?(dynamic_)?(playlist_)?(?P<timestamp>\d+)\.m3u8(\?.+)?', name):
+                self.playlist_url = f'{base}/{prefix}playlist_{m["timestamp"]}.m3u8'
+            else:
+                self.playlist_url = f'{base}/{prefix}master_playlist.m3u8'
 
-        base, name = self.playlist_url.rsplit('/', 1)
-        # get prefix, if any
-        if name.split('_')[0] not in ['master', 'playlist', 'dynamic']:
-            prefix = name.split('_')[0] + '_'
-        else:
-            prefix = ''
-        if m := re.search(r'(master_)?(dynamic_)?(playlist_)?(?P<timestamp>\d+)\.m3u8(\?.+)?', name):
-            self.playlist_url = f'{base}/{prefix}playlist_{m["timestamp"]}.m3u8'
-        else:
-            self.playlist_url = f'{base}/{prefix}master_playlist.m3u8'
-
-        # Replace transcode url with non-transcode url
-        # from /transcode/{server_region}/{server_deploy}/{transcode_settings}/
-        # to /non_transcode/{server_region}/{server_deploy}/
-        self.playlist_url = re.sub(r'/transcode/([^/]+/[^/]+/)[^/]+/', r'/non_transcode/\1', self.playlist_url)
+            # Replace transcode url with non-transcode url
+            # from /transcode/{server_region}/{server_deploy}/{transcode_settings}/
+            # to /non_transcode/{server_region}/{server_deploy}/
+            self.playlist_url = re.sub(r'/transcode/([^/]+/[^/]+/)[^/]+/', r'/non_transcode/\1', self.playlist_url)
 
         self.generate_filename()
         # NOT TESTED
@@ -547,13 +546,12 @@ class TwitterSpace:
                 print("[ChatExporter] Chat Exporting is currently only supported for Ended Spaces with a recording. To Export Chat for a live space, copy the chat token and use WebSocketDriver.py.")
                 chatThread = Thread(target=WebSocketHandler.SpaceChat, args=(self.chat_token, self.filename, self.path,))
             #chatThread.start()
-
         m4a_metadata = None
         if self.metadata is not None:
             # Print out the space/broadcast information
             type_name = self.type.capitalize()
             suffix = '.ts' if self.media_type == 'video' else '.m4a'
-            print(f"{type_name} Found!")
+            print(f"============ {type_name} Information ============")
             print(f"{type_name} ID: {self.space_id}")
             print(f"{type_name} Type: {self.media_type}")
             print(f"{type_name} Title: {self.title}")
@@ -564,6 +562,10 @@ class TwitterSpace:
             print(f"Chat Token:\n{self.chat_token}")
             print(f"Downloading to {self.filename}{suffix}")
             m4a_metadata = {"title" : self.title, "author" : self.creator.screen_name}
+
+            if not self.playlist_url:
+                print("No playlist URL found. Exiting.")
+                return
 
             if self.state == "Running":
                 self.was_running = True # this is only useful for chat exporter
@@ -578,6 +580,9 @@ class TwitterSpace:
                         self.state = "ERROR"
                 print("Space Ended. Wait 1 minute for the recording to be processed.")
                 time.sleep(60)
+
+        if not self.playlist_url: # this should never happen because of the check above, but just in case
+            raise ValueError("No playlist URL given. Cannot proceed with downloading.")
 
         chunks = self.get_chunks(self.playlist_url)
         if simulate:
