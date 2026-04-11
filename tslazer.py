@@ -1,8 +1,10 @@
 import argparse
 import TwitterSpace
 
+__version__ = "1.0.0"
 
 parser = argparse.ArgumentParser(description="Download Twitter Spaces at lazer fast speeds!", formatter_class=argparse.RawTextHelpFormatter)
+parser.add_argument("--version", "-V", action="version", version=f"%(prog)s {__version__}")
 parser.add_argument("--path", "-p", default='.', help="Path to download the space")
 parser.add_argument("--keep", "-k", action='store_true', help="Keep the temporary files")
 parser.add_argument("--cookies", "--cookie", "-c", help="Twitter cookies.txt file (in Netscape format)")
