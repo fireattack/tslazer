@@ -247,25 +247,20 @@ class TwitterSpace:
         assert len(chunks) > 0, "No chunks found in m3u8"
         return chunks
 
-    def download_chunks(self, chunks, filename, path='.', metadata=None, keep_temp=False):
+    def download_chunks(self, chunks, chunk_dir):
         """
-        Download all of the chunks from the m3u8 to a specified path.
+        Download all of the chunks from the m3u8 to a chunk directory.
+        Already-downloaded chunks are silently skipped.
 
-        :param chunks: list of chunks
-        :param base_url: the base url of the playlist.
-        :param filename: Name of the file we want to write the data to
-        :param path: the path to download the chunks to
-        :param metadata: any additional metadata that we would like to write to the m4a
-        :param keep_temp: keep the temp files
-        :returns: None
+        :param chunks: list of m3u8 segments
+        :param chunk_dir: Path to the directory to store chunk files
         """
-        path = Path(path)
-        chunk_dir = path / ('chunks_' + str(int(datetime.now().timestamp())) + '_' + filename)
-        chunk_dir.mkdir()
 
         def download(chunk_url, key=None, iv=None, chunk_dir=None):
             filename = chunk_url.split("/")[-1]
             f = chunk_dir / filename
+            if f.exists():
+                return  # Already downloaded, skip
             retry_count = 0
             while retry_count < 10:
                 if retry_count > 0:
@@ -331,6 +326,19 @@ class TwitterSpace:
                 return
 
         print("\nFinished Downloading Chunks.")
+
+    def merge_chunks(self, chunks, chunk_dir, filename, path='.', metadata=None, keep_temp=False):
+        """
+        Verify, merge, and convert downloaded chunks into the final output file.
+
+        :param chunks: list of m3u8 segments (used for ordering)
+        :param chunk_dir: Path to the directory containing chunk files
+        :param filename: Name of the output file (without extension)
+        :param path: the output directory path
+        :param metadata: optional dict with 'title' and 'author' for m4a metadata
+        :param keep_temp: keep the temp files
+        """
+        path = Path(path)
 
         # Verify, and the files will be automatically in order
         files = []
@@ -569,17 +577,36 @@ class TwitterSpace:
 
             if self.state == "Running":
                 self.was_running = True # this is only useful for chat exporter
-                print("Waiting for space to end...")
+                if simulate:
+                    print("Simulate mode, no download will be performed.")
+                    return
+                print("Live downloading started. Downloading chunks as they become available...")
+                chunk_dir = Path(self.path) / ('chunks_' + str(int(datetime.now().timestamp())) + '_' + self.filename)
+                chunk_dir.mkdir()
                 while self.state == "Running":
                     try:
-                        #TODO: live download
+                        chunks = self.get_chunks(self.playlist_url)
+                        self.download_chunks(chunks, chunk_dir)
                         self.update_metadata(self.space_id)
                         self.generate_filename() # update filename if the space title changes
                         time.sleep(10)
-                    except Exception:
+                    except KeyboardInterrupt:
+                        print("\nDownload interrupted by user.")
+                        return
+                    except Exception as e:
+                        print(f"\nError during live download: {e}")
                         self.state = "ERROR"
-                print("Space Ended. Wait 1 minute for the recording to be processed.")
+                print("Space Ended. Wait 1 minute for final chunks to be processed...")
                 time.sleep(60)
+                # Final pass to catch any remaining chunks
+                chunks = self.get_chunks(self.playlist_url)
+                self.download_chunks(chunks, chunk_dir)
+                self.merge_chunks(chunks, chunk_dir, self.filename, self.path, m4a_metadata, keep_temp=self.keep_temp)
+
+                if with_chat == True and self.chat_token is not None and self.state == "Ended" and self.was_running == False:
+                    chatThread.start()
+                    print("[ChatExporter]: Chat Thread Started")
+                return
 
         if not self.playlist_url: # this should never happen because of the check above, but just in case
             raise ValueError("No playlist URL given. Cannot proceed with downloading.")
@@ -588,7 +615,10 @@ class TwitterSpace:
         if simulate:
             print("Simulate mode, no download will be performed.")
             return
-        self.download_chunks(chunks, self.filename, self.path, m4a_metadata, keep_temp=self.keep_temp)
+        chunk_dir = Path(self.path) / ('chunks_' + str(int(datetime.now().timestamp())) + '_' + self.filename)
+        chunk_dir.mkdir()
+        self.download_chunks(chunks, chunk_dir)
+        self.merge_chunks(chunks, chunk_dir, self.filename, self.path, m4a_metadata, keep_temp=self.keep_temp)
 
         if with_chat == True and self.chat_token is not None and self.state == "Ended" and self.was_running == False:
             chatThread.start() # If We're Downloading a Recording, we're all good to download the chat.
