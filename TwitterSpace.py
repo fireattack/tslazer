@@ -243,7 +243,6 @@ class TwitterSpace:
         # Always use playlist_url as the base url instead of the sub-playlist url to get non-transcoding chunks.
         m3u8_obj = m3u8.loads(r2.text, uri=playlist_url)
         chunks = m3u8_obj.segments
-        print(f'Get {len(chunks)} chunks.')
         assert len(chunks) > 0, "No chunks found in m3u8"
         return chunks
 
@@ -260,7 +259,7 @@ class TwitterSpace:
             filename = chunk_url.split("/")[-1]
             f = chunk_dir / filename
             if f.exists():
-                return  # Already downloaded, skip
+                return False  # Already downloaded, skip
             retry_count = 0
             while retry_count < 10:
                 if retry_count > 0:
@@ -277,7 +276,7 @@ class TwitterSpace:
                                 bytes_ = decode(bytes_, key, iv)
                             with f.open("wb") as fio:
                                 fio.write(bytes_)
-                            break
+                            return True
                         else:
                             print(f"[WARN] Size mismatch: expected {expected_size}, got {actual_size}")
                             retry_count += 1
@@ -310,6 +309,7 @@ class TwitterSpace:
                 futures.append(ex.submit(download, chunk_url, key, iv, chunk_dir))
             total = len(futures)
             finished = 0
+            new_count = 0
             try:
                 for future in concurrent.futures.as_completed(futures):
                     if future.exception() is not None:
@@ -318,14 +318,19 @@ class TwitterSpace:
                             future.cancel()
                         return
                     finished += 1
-                    print(f'\r{finished}/{total} chunks downloaded.      ', end='')
+                    if future.result():
+                        new_count += 1
+                    print(f'\r{finished}/{total} chunks processed ({new_count} new).      ', end='')
             except KeyboardInterrupt:
                 print("\nDownload interrupted by user. Aborting...")
                 for future in futures:
                     future.cancel()
                 return
 
-        print("\nFinished Downloading Chunks.")
+        if new_count > 0:
+            print(f"\nDownloaded {new_count} new chunks (total: {total}).")
+        else:
+            print(f"\rNo new chunks. (total: {total})              ")
 
     def merge_chunks(self, chunks, chunk_dir, filename, path='.', metadata=None, keep_temp=False):
         """
